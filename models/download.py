@@ -2,6 +2,10 @@
 
 Usage:
     uv run models/download.py --list
+    uv run models/download.py qwen3.5-2b
+    uv run models/download.py --all
+
+Files are saved to models/<key>/ (git-ignored).
 """
 
 import argparse
@@ -10,8 +14,10 @@ import sys
 from pathlib import Path
 
 import yaml
+from huggingface_hub import hf_hub_download
 
-REGISTRY_PATH = Path(__file__).parent / "registry.yaml"
+MODELS_DIR = Path(__file__).parent
+REGISTRY_PATH = MODELS_DIR / "registry.yaml"
 
 # Fields every registry entry must have, so later code can rely on them.
 REQUIRED_FIELDS = {
@@ -82,10 +88,29 @@ def print_models(models: dict[str, dict]) -> None:
     print(f"\nTotal GGUF download: {total / 1e9:.2f} GB")
 
 
+def download_gguf(key: str, model: dict) -> Path:
+    """Download one model's GGUF file to models/<key>/ and return its path.
+
+    Files that are already complete are not downloaded again, and an
+    interrupted download resumes where it stopped.
+    """
+    gguf = model["gguf"]
+    print(f"{key}: {gguf['file']} ({gguf['size_bytes'] / 1e9:.2f} GB) from {gguf['repo']}")
+    path = hf_hub_download(
+        repo_id=gguf["repo"],
+        filename=gguf["file"],
+        revision=gguf["revision"],
+        local_dir=MODELS_DIR / key,
+    )
+    return Path(path)
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Download the models listed in models/registry.yaml."
     )
+    parser.add_argument("models", nargs="*", metavar="MODEL", help="model keys to download (see --list)")
+    parser.add_argument("--all", action="store_true", help="download every model in the registry")
     parser.add_argument("--list", action="store_true", help="list available models and exit")
     return parser
 
@@ -103,7 +128,19 @@ def main(argv: list[str] | None = None) -> int:
         print_models(models)
         return 0
 
-    parser.print_help()
+    keys = list(models) if args.all else args.models
+    if not keys:
+        parser.print_help()
+        return 0
+
+    unknown = [k for k in keys if k not in models]
+    if unknown:
+        print(f"error: unknown model(s): {', '.join(unknown)}. Run --list to see them.", file=sys.stderr)
+        return 1
+
+    for key in keys:
+        path = download_gguf(key, models[key])
+        print(f"  saved to {path}")
     return 0
 
 
