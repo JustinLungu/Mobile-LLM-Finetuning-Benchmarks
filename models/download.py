@@ -17,7 +17,15 @@ import sys
 from pathlib import Path
 
 import yaml
-from huggingface_hub import hf_hub_download
+from huggingface_hub import get_token, hf_hub_download
+from huggingface_hub.errors import (
+    EntryNotFoundError,
+    GatedRepoError,
+    HfHubHTTPError,
+    LocalEntryNotFoundError,
+    RepositoryNotFoundError,
+    RevisionNotFoundError,
+)
 
 MODELS_DIR = Path(__file__).parent
 REGISTRY_PATH = MODELS_DIR / "registry.yaml"
@@ -118,6 +126,46 @@ def verify(path: Path, expected_sha256: str) -> None:
         )
 
 
+class DownloadError(Exception):
+    """A file could not be downloaded from Hugging Face."""
+
+
+def explain_hub_error(e: Exception, repo: str, revision: str, filename: str) -> str:
+    """Turn a huggingface_hub exception into a message that says what to do.
+
+    Order matters: GatedRepoError is a subclass of RepositoryNotFoundError, and
+    LocalEntryNotFoundError of EntryNotFoundError, so the specific cases must
+    be checked first.
+    """
+    url = f"https://huggingface.co/{repo}"
+    if isinstance(e, GatedRepoError):
+        if get_token() is None:
+            return (
+                f"{repo} is gated and you are not logged in to Hugging Face.\n"
+                f"  1. Request access at {url}\n"
+                f"  2. Create a read token at https://huggingface.co/settings/tokens\n"
+                f"  3. Run: uv run hf auth login"
+            )
+        return (
+            f"{repo} is gated and your Hugging Face account has no access yet.\n"
+            f"  Request access at {url}. Some authors approve manually, which can take hours or days."
+        )
+    if isinstance(e, RepositoryNotFoundError):
+        return f"repository {repo} not found. Check the repo name in models/registry.yaml."
+    if isinstance(e, RevisionNotFoundError):
+        return f"revision {revision} not found in {repo}. Check the revision in models/registry.yaml."
+    if isinstance(e, LocalEntryNotFoundError):
+        return "could not reach Hugging Face and the file is not downloaded yet. Check your internet connection."
+    if isinstance(e, EntryNotFoundError):
+        # Hugging Face also reports a well-formed but nonexistent commit hash
+        # this way, so either value may be wrong.
+        return (
+            f"{filename} not found in {repo} at revision {revision[:8]}.\n"
+            f"  Check the file name and the revision in models/registry.yaml."
+        )
+    return f"Hugging Face request failed: {e}"
+
+
 def download_gguf(key: str, model: dict, force: bool = False) -> Path:
     """Download one model's GGUF file to models/<key>/ and return its path.
 
@@ -126,13 +174,16 @@ def download_gguf(key: str, model: dict, force: bool = False) -> Path:
     """
     gguf = model["gguf"]
     print(f"{key}: {gguf['file']} ({gguf['size_bytes'] / 1e9:.2f} GB) from {gguf['repo']}")
-    path = hf_hub_download(
-        repo_id=gguf["repo"],
-        filename=gguf["file"],
-        revision=gguf["revision"],
-        local_dir=MODELS_DIR / key,
-        force_download=force,
-    )
+    try:
+        path = hf_hub_download(
+            repo_id=gguf["repo"],
+            filename=gguf["file"],
+            revision=gguf["revision"],
+            local_dir=MODELS_DIR / key,
+            force_download=force,
+        )
+    except (HfHubHTTPError, EntryNotFoundError) as e:
+        raise DownloadError(explain_hub_error(e, gguf["repo"], gguf["revision"], gguf["file"])) from e
     return Path(path)
 
 
@@ -172,7 +223,12 @@ def main(argv: list[str] | None = None) -> int:
 
     failed = []
     for key in keys:
-        path = download_gguf(key, models[key], force=args.force)
+        try:
+            path = download_gguf(key, models[key], force=args.force)
+        except DownloadError as e:
+            print(f"error: {e}", file=sys.stderr)
+            failed.append(key)
+            continue
         print("  verifying checksum...", end=" ", flush=True)
         try:
             verify(path, models[key]["gguf"]["sha256"])
@@ -185,7 +241,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"  saved to {path}")
 
     if failed:
-        print(f"\n{len(failed)} model(s) failed verification: {', '.join(failed)}", file=sys.stderr)
+        print(f"\n{len(failed)} model(s) failed: {', '.join(failed)}", file=sys.stderr)
         return 1
     return 0
 
