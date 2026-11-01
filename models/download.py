@@ -5,19 +5,22 @@ Usage:
     uv run models/download.py qwen3.5-2b
     uv run models/download.py --all
     uv run models/download.py qwen3.5-2b --force   # re-download, e.g. after a failed check
+    uv run models/download.py qwen3.5-2b --original --dry-run   # show what fine-tuning needs
 
-Files are saved to models/<key>/ (git-ignored) and checked against the SHA256
-checksum in the registry.
+GGUF files (for llama.cpp and phones) are saved to models/<key>/. Original
+weights (for fine-tuning) are saved to models/<key>/original/ with --original.
+Both are git-ignored and checked against SHA256 checksums after download.
 """
 
 import argparse
+import fnmatch
 import hashlib
 import re
 import sys
 from pathlib import Path
 
 import yaml
-from huggingface_hub import get_token, hf_hub_download
+from huggingface_hub import HfApi, get_token, hf_hub_download, snapshot_download
 from huggingface_hub.errors import (
     EntryNotFoundError,
     GatedRepoError,
@@ -39,6 +42,12 @@ REQUIRED_FIELDS = {
 
 COMMIT_HASH = re.compile(r"^[0-9a-f]{40}$")
 SHA256 = re.compile(r"^[0-9a-f]{64}$")
+
+# Files in the original repos that fine-tuning does not need. Meta's Llama
+# repos keep a second full copy of the weights in their own format in a
+# folder called original/ (6.4 GB for Llama 3.2 3B); we use the .safetensors
+# copy instead.
+ORIGINAL_SKIP_PATTERNS = ["original/*", "*.pth"]
 
 # Read files in 8 MB pieces when hashing, so a multi-gigabyte model never has
 # to fit in memory at once.
@@ -119,7 +128,7 @@ def verify(path: Path, expected_sha256: str) -> None:
     actual = sha256_of(path)
     if actual != expected_sha256:
         raise ChecksumError(
-            f"{path.name} does not match the registry checksum\n"
+            f"{path.name} does not match its expected checksum\n"
             f"  expected {expected_sha256}\n"
             f"  got      {actual}\n"
             f"  The file is incomplete or modified. Re-download it with --force."
@@ -187,6 +196,84 @@ def download_gguf(key: str, model: dict, force: bool = False) -> Path:
     return Path(path)
 
 
+def list_original_files(model: dict) -> list:
+    """Ask Hugging Face which files of the original repo we need, with sizes and checksums."""
+    o = model["original"]
+    try:
+        info = HfApi().model_info(o["repo"], revision=o["revision"], files_metadata=True)
+    except (HfHubHTTPError, EntryNotFoundError) as e:
+        raise DownloadError(explain_hub_error(e, o["repo"], o["revision"], "")) from e
+    return [
+        f for f in info.siblings
+        if not any(fnmatch.fnmatch(f.rfilename, p) for p in ORIGINAL_SKIP_PATTERNS)
+    ]
+
+
+def download_original(key: str, model: dict, files: list, force: bool = False) -> Path:
+    """Download the given files of the original repo to models/<key>/original/."""
+    o = model["original"]
+    try:
+        path = snapshot_download(
+            repo_id=o["repo"],
+            revision=o["revision"],
+            local_dir=MODELS_DIR / key / "original",
+            # Exactly the files listed by list_original_files(), so a dry run
+            # and a real download always agree.
+            allow_patterns=[f.rfilename for f in files],
+            force_download=force,
+        )
+    except (HfHubHTTPError, EntryNotFoundError) as e:
+        raise DownloadError(explain_hub_error(e, o["repo"], o["revision"], "")) from e
+    return Path(path)
+
+
+def fetch_gguf(key: str, model: dict, force: bool, dry_run: bool) -> int:
+    """Download and verify one GGUF file. Returns its size in bytes."""
+    gguf = model["gguf"]
+    if dry_run:
+        print(f"{key}: would download {gguf['file']} ({gguf['size_bytes'] / 1e9:.2f} GB) from {gguf['repo']}")
+        return gguf["size_bytes"]
+
+    path = download_gguf(key, model, force=force)
+    print("  verifying checksum...", end=" ", flush=True)
+    try:
+        verify(path, gguf["sha256"])
+    except ChecksumError:
+        print("FAILED")
+        raise
+    print("ok")
+    print(f"  saved to {path}")
+    return gguf["size_bytes"]
+
+
+def fetch_original(key: str, model: dict, force: bool, dry_run: bool) -> int:
+    """Download and verify one model's original weights. Returns their size in bytes."""
+    repo = model["original"]["repo"]
+    files = list_original_files(model)
+    total = sum(f.size or 0 for f in files)
+    verb = "would download" if dry_run else "downloading"
+    print(f"{key}: {verb} {len(files)} files ({total / 1e9:.2f} GB) from {repo}")
+    if dry_run:
+        for f in files:
+            print(f"  {f.rfilename:50} {(f.size or 0) / 1e6:10.1f} MB")
+        return total
+
+    path = download_original(key, model, files, force=force)
+    # Hugging Face publishes SHA256 checksums for large (LFS) files only, which
+    # covers the weights; small text files have no published checksum.
+    large = [f for f in files if f.lfs]
+    print(f"  verifying {len(large)} checksums...", end=" ", flush=True)
+    try:
+        for f in large:
+            verify(path / f.rfilename, f.lfs.sha256)
+    except ChecksumError:
+        print("FAILED")
+        raise
+    print("ok")
+    print(f"  saved to {path}")
+    return total
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Download the models listed in models/registry.yaml."
@@ -195,6 +282,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--all", action="store_true", help="download every model in the registry")
     parser.add_argument("--list", action="store_true", help="list available models and exit")
     parser.add_argument("--force", action="store_true", help="re-download even if the file already exists")
+    parser.add_argument(
+        "--original", action="store_true",
+        help="download the original weights (for fine-tuning) instead of the GGUF file",
+    )
+    parser.add_argument("--dry-run", action="store_true", help="show what would be downloaded, without downloading")
     return parser
 
 
@@ -221,25 +313,18 @@ def main(argv: list[str] | None = None) -> int:
         print(f"error: unknown model(s): {', '.join(unknown)}. Run --list to see them.", file=sys.stderr)
         return 1
 
+    fetch = fetch_original if args.original else fetch_gguf
     failed = []
+    total = 0
     for key in keys:
         try:
-            path = download_gguf(key, models[key], force=args.force)
-        except DownloadError as e:
+            total += fetch(key, models[key], force=args.force, dry_run=args.dry_run)
+        except (DownloadError, ChecksumError) as e:
             print(f"error: {e}", file=sys.stderr)
             failed.append(key)
-            continue
-        print("  verifying checksum...", end=" ", flush=True)
-        try:
-            verify(path, models[key]["gguf"]["sha256"])
-        except ChecksumError as e:
-            print("FAILED")
-            print(f"error: {e}", file=sys.stderr)
-            failed.append(key)
-            continue
-        print("ok")
-        print(f"  saved to {path}")
 
+    if args.dry_run:
+        print(f"\nTotal: {total / 1e9:.2f} GB (nothing downloaded)")
     if failed:
         print(f"\n{len(failed)} model(s) failed: {', '.join(failed)}", file=sys.stderr)
         return 1
