@@ -4,11 +4,14 @@ Usage:
     uv run models/download.py --list
     uv run models/download.py qwen3.5-2b
     uv run models/download.py --all
+    uv run models/download.py qwen3.5-2b --force   # re-download, e.g. after a failed check
 
-Files are saved to models/<key>/ (git-ignored).
+Files are saved to models/<key>/ (git-ignored) and checked against the SHA256
+checksum in the registry.
 """
 
 import argparse
+import hashlib
 import re
 import sys
 from pathlib import Path
@@ -28,6 +31,10 @@ REQUIRED_FIELDS = {
 
 COMMIT_HASH = re.compile(r"^[0-9a-f]{40}$")
 SHA256 = re.compile(r"^[0-9a-f]{64}$")
+
+# Read files in 8 MB pieces when hashing, so a multi-gigabyte model never has
+# to fit in memory at once.
+HASH_CHUNK_BYTES = 8 * 1024 * 1024
 
 
 class RegistryError(Exception):
@@ -88,11 +95,34 @@ def print_models(models: dict[str, dict]) -> None:
     print(f"\nTotal GGUF download: {total / 1e9:.2f} GB")
 
 
-def download_gguf(key: str, model: dict) -> Path:
+class ChecksumError(Exception):
+    """A downloaded file does not match the checksum in the registry."""
+
+
+def sha256_of(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as f:
+        while chunk := f.read(HASH_CHUNK_BYTES):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def verify(path: Path, expected_sha256: str) -> None:
+    actual = sha256_of(path)
+    if actual != expected_sha256:
+        raise ChecksumError(
+            f"{path.name} does not match the registry checksum\n"
+            f"  expected {expected_sha256}\n"
+            f"  got      {actual}\n"
+            f"  The file is incomplete or modified. Re-download it with --force."
+        )
+
+
+def download_gguf(key: str, model: dict, force: bool = False) -> Path:
     """Download one model's GGUF file to models/<key>/ and return its path.
 
-    Files that are already complete are not downloaded again, and an
-    interrupted download resumes where it stopped.
+    Files that are already complete are not downloaded again (unless `force`),
+    and an interrupted download resumes where it stopped.
     """
     gguf = model["gguf"]
     print(f"{key}: {gguf['file']} ({gguf['size_bytes'] / 1e9:.2f} GB) from {gguf['repo']}")
@@ -101,6 +131,7 @@ def download_gguf(key: str, model: dict) -> Path:
         filename=gguf["file"],
         revision=gguf["revision"],
         local_dir=MODELS_DIR / key,
+        force_download=force,
     )
     return Path(path)
 
@@ -112,6 +143,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("models", nargs="*", metavar="MODEL", help="model keys to download (see --list)")
     parser.add_argument("--all", action="store_true", help="download every model in the registry")
     parser.add_argument("--list", action="store_true", help="list available models and exit")
+    parser.add_argument("--force", action="store_true", help="re-download even if the file already exists")
     return parser
 
 
@@ -138,9 +170,23 @@ def main(argv: list[str] | None = None) -> int:
         print(f"error: unknown model(s): {', '.join(unknown)}. Run --list to see them.", file=sys.stderr)
         return 1
 
+    failed = []
     for key in keys:
-        path = download_gguf(key, models[key])
+        path = download_gguf(key, models[key], force=args.force)
+        print("  verifying checksum...", end=" ", flush=True)
+        try:
+            verify(path, models[key]["gguf"]["sha256"])
+        except ChecksumError as e:
+            print("FAILED")
+            print(f"error: {e}", file=sys.stderr)
+            failed.append(key)
+            continue
+        print("ok")
         print(f"  saved to {path}")
+
+    if failed:
+        print(f"\n{len(failed)} model(s) failed verification: {', '.join(failed)}", file=sys.stderr)
+        return 1
     return 0
 
 
