@@ -1,0 +1,15 @@
+[project]
+name = "mobile-llm-finetuning-benchmarks"
+version = "0.1.0"
+description = "Fine-tuning and benchmarking small LLMs for on-device reasoning on iPhone and Android."
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.12"
+dependencies = [
+    "huggingface-hub>=2.4.0",
+    "pyyaml>=6.0.3",
+]
+
+[tool.uv]
+# This repo is a collection of scripts, not an installable package.
+package = false
