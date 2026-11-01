@@ -1,0 +1,59 @@
+# --- Model weights and large artifacts (download with models/ scripts) ---
+*.gguf
+*.safetensors
+*.bin
+*.pt
+*.pth
+*.onnx
+*.mlpackage/
+*.mlmodelc/
+models/*/
+checkpoints/
+outputs/
+adapters/
+wandb/
+
+# --- Generated datasets (keep generators and small labelled sets in git) ---
+data/generated/
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.env
+.ipynb_checkpoints/
+.pytest_cache/
+*.egg-info/
+
+# --- iOS / Xcode ---
+apps/ios/*.xcodeproj/
+apps/ios/*.xcworkspace/
+DerivedData/
+xcuserdata/
+*.xcuserstate
+build/
+.swiftpm/
+Pods/
+
+# --- Android / Gradle ---
+.gradle/
+local.properties
+apps/android/**/build/
+.cxx/
+.externalNativeBuild/
+*.apk
+*.aab
+*.keystore
+*.jks
+
+# --- Editors / OS ---
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+
+# --- Miscellaneous ---
+DECISIONS.md
+ROADMAP.md
