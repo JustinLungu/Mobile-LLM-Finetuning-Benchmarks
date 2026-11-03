@@ -1,3 +1,6 @@
+# --- Third-party source and builds (fetched by scripts) ---
+third_party/
+
 # --- Model weights and large artifacts (download with models/ scripts) ---
 *.gguf
 *.safetensors
