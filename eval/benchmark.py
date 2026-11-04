@@ -4,6 +4,7 @@ Usage (from the repository root):
     uv run eval/benchmark.py qwen3.5-2b --build cuda
     uv run eval/benchmark.py --all
     uv run eval/benchmark.py --all --output-dir /tmp/try-it
+    uv run eval/benchmark.py qwen3.5-2b --repeats 1    # quick check, not a full reliability run
 
 Results follow spec/results.schema.json and go to results/linux/ by default.
 """
@@ -12,6 +13,7 @@ import argparse
 import json
 import platform
 import re
+import statistics
 import subprocess
 import sys
 import time
@@ -35,6 +37,8 @@ PROMPTS_PATH = REPO_ROOT / "spec" / "bench_prompts.json"
 LLAMA_CPP_ENV_PATH = REPO_ROOT / "eval" / "llama_cpp.env"
 DEFAULT_OUTPUT_DIR = REPO_ROOT / "results" / "linux"
 SEED = 0
+# 4 repeats of the 5 prompts = the 20 back-to-back runs of our reliability criterion.
+DEFAULT_REPEATS = 4
 
 
 class BenchmarkServer(LlamaServer):
@@ -206,15 +210,24 @@ def measure(server: BenchmarkServer, spec: dict, prompt: dict, repeat: int) -> d
     }
 
 
-def benchmark(key: str, build: str) -> dict:
+def highest_memory(previous: dict, current: dict) -> dict:
+    """Keep the highest value of each memory field across server restarts."""
+    merged = dict(current)
+    for field in ("bytes", "private_bytes", "gpu_bytes"):
+        if previous.get(field) is not None and field in merged:
+            merged[field] = max(previous[field], merged[field])
+    return merged
+
+
+def benchmark(key: str, build: str, repeats: int = DEFAULT_REPEATS) -> dict:
     """Benchmark one model on one build. A failure is recorded in the results, not raised."""
     spec = json.loads(PROMPTS_PATH.read_text())
-    server = BenchmarkServer(gguf_path(key), build=build)
+    info_server = BenchmarkServer(gguf_path(key), build=build)
     results = {
         "schema_version": 1,
         "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "device": device_info(build),
-        "engine": engine_info(server),
+        "engine": engine_info(info_server),
         "model": model_info(key),
         "settings": {
             "ctx_size": DEFAULT_CTX_SIZE,
@@ -223,9 +236,9 @@ def benchmark(key: str, build: str) -> dict:
             "seed": SEED,
             "thinking": False,
             "prompts_version": spec["version"],
-            "repeats": 1,
+            "repeats": repeats,
         },
-        "reliability": {"runs_requested": len(spec["prompts"]), "runs_completed": 0, "error": None},
+        "reliability": {"runs_requested": repeats * len(spec["prompts"]), "runs_completed": 0, "error": None},
         "load_times_s": [],
         "peak_memory": {"bytes": None, "method": None},
         "runs": [],
@@ -235,13 +248,16 @@ def benchmark(key: str, build: str) -> dict:
         results["notes"] = notes
 
     try:
-        with server:
-            results["load_times_s"].append(server.load_time_s)
-            for prompt in spec["prompts"]:
-                results["runs"].append(measure(server, spec, prompt, repeat=0))
-                results["reliability"]["runs_completed"] += 1
-                # Read after every prompt, so a later crash doesn't lose it.
-                results["peak_memory"] = server.peak_memory()
+        for repeat in range(repeats):
+            # A fresh server each time: Wilo loads the model every time it wakes up,
+            # so this tests that cycle and measures the load time more than once.
+            with BenchmarkServer(gguf_path(key), build=build) as server:
+                results["load_times_s"].append(server.load_time_s)
+                for prompt in spec["prompts"]:
+                    results["runs"].append(measure(server, spec, prompt, repeat))
+                    results["reliability"]["runs_completed"] += 1
+                    # Read after every prompt, so a later crash doesn't lose it.
+                    results["peak_memory"] = highest_memory(results["peak_memory"], server.peak_memory())
     except ServerError as e:
         results["reliability"]["error"] = str(e)
     return results
@@ -267,6 +283,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--all", action="store_true", help="every downloaded model")
     parser.add_argument("--build", choices=["cpu", "cuda"], help="only this llama.cpp build (default: all built)")
     parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR, help="where to write results")
+    parser.add_argument(
+        "--repeats", type=int, default=DEFAULT_REPEATS,
+        help=f"how many times to run the prompt set, each with a fresh server (default: {DEFAULT_REPEATS})",
+    )
     args = parser.parse_args(argv)
 
     keys = [k for k in models if gguf_path(k).exists()] if args.all else args.models
@@ -287,19 +307,23 @@ def main(argv: list[str] | None = None) -> int:
     for key in keys:
         for build in builds:
             print(f"{key:12} {build:5} ", end="", flush=True)
-            results = benchmark(key, build)
-            path = write_results(results, args.output_dir)
-            error = results["reliability"]["error"]
-            if error:
+            results = benchmark(key, build, repeats=args.repeats)
+            write_results(results, args.output_dir)
+            reliability = results["reliability"]
+            completed = f"{reliability['runs_completed']}/{reliability['runs_requested']} runs"
+            if reliability["error"]:
                 failed += 1
-                print(f"FAILED: {error}")
+                print(f"FAILED after {completed}: {reliability['error']}")
                 continue
             runs = results["runs"]
-            speed = sum(r["reply_tokens_per_s"] for r in runs) / len(runs)
+            # Medians: a single unusually slow run shouldn't move the headline number.
+            load = statistics.median(results["load_times_s"])
+            first_token = statistics.median(r["time_to_first_token_ms"] for r in runs)
+            speed = statistics.median(r["reply_tokens_per_s"] for r in runs)
             memory = results["peak_memory"]
             gpu = f"  gpu {memory['gpu_bytes'] / 1e9:4.2f} GB" if "gpu_bytes" in memory else ""
             print(
-                f"load {results['load_times_s'][0]:4.1f} s   reply {speed:6.1f} tokens/s   "
+                f"{completed}   load {load:4.1f} s   first token {first_token:6.0f} ms   reply {speed:6.1f} tokens/s   "
                 f"memory {memory['bytes'] / 1e9:4.2f} GB, private {memory['private_bytes'] / 1e9:4.2f} GB{gpu}"
             )
     return 1 if failed else 0
