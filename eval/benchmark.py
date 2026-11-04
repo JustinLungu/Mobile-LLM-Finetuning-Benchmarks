@@ -14,6 +14,8 @@ import platform
 import subprocess
 import sys
 import time
+import urllib.error
+import urllib.request
 from pathlib import Path
 
 from jsonschema import Draft202012Validator
@@ -32,6 +34,55 @@ PROMPTS_PATH = REPO_ROOT / "spec" / "bench_prompts.json"
 LLAMA_CPP_ENV_PATH = REPO_ROOT / "eval" / "llama_cpp.env"
 DEFAULT_OUTPUT_DIR = REPO_ROOT / "results" / "linux"
 SEED = 0
+
+
+class BenchmarkServer(LlamaServer):
+    """A LlamaServer that can also time replies the way a user experiences them."""
+
+    def chat_timed(self, messages: list[dict], max_tokens: int = 64, timeout_s: float = 300) -> dict:
+        """Send one chat request, streaming the reply, and time it as a user would experience it.
+
+        Returns the reply text, finish reason, the server's own timings, and
+        time_to_first_token_ms and total_ms measured from here.
+        """
+        request = self._request(messages, max_tokens, stream=True)
+        text = ""
+        first_token_ms = None
+        finish_reason = None
+        timings = None
+        started = time.perf_counter()
+        try:
+            with urllib.request.urlopen(request, timeout=timeout_s) as r:
+                # The reply arrives as lines of "data: {json}", ending in "data: [DONE]".
+                for raw_line in r:
+                    line = raw_line.decode().strip()
+                    if not line.startswith("data: ") or line == "data: [DONE]":
+                        continue
+                    chunk = json.loads(line.removeprefix("data: "))
+                    choice = chunk["choices"][0] if chunk.get("choices") else {}
+                    # The first chunk announces the reply but has no text yet.
+                    content = choice.get("delta", {}).get("content")
+                    if content:
+                        if first_token_ms is None:
+                            first_token_ms = (time.perf_counter() - started) * 1000
+                        text += content
+                    finish_reason = choice.get("finish_reason") or finish_reason
+                    timings = chunk.get("timings") or timings
+        except (urllib.error.URLError, TimeoutError) as e:
+            raise ServerError(f"chat request failed: {e}. See {self.log_path}") from e
+        total_ms = (time.perf_counter() - started) * 1000
+
+        if first_token_ms is None:
+            raise ServerError(f"the model produced no text. See {self.log_path}")
+        if timings is None:
+            raise ServerError(f"the server reported no timings. See {self.log_path}")
+        return {
+            "text": text,
+            "finish_reason": finish_reason,
+            "timings": timings,
+            "time_to_first_token_ms": first_token_ms,
+            "total_ms": total_ms,
+        }
 
 
 def read_text(path: str) -> str | None:
@@ -100,31 +151,30 @@ def machine_notes() -> str | None:
     return f"Power profile: {profile}." if profile else None
 
 
-def measure(server: LlamaServer, spec: dict, prompt: dict, repeat: int) -> dict:
+def measure(server: BenchmarkServer, spec: dict, prompt: dict, repeat: int) -> dict:
     """Run one prompt and return its entry for the results file."""
-    response = server.chat(
+    reply = server.chat_timed(
         [{"role": "system", "content": spec["system"]}, {"role": "user", "content": prompt["user"]}],
         max_tokens=spec["max_tokens"],
     )
-    timings = response["timings"]
+    timings = reply["timings"]
     return {
         "prompt_id": prompt["id"],
         "repeat": repeat,
         "prompt_tokens": timings["prompt_n"],
         "reply_tokens": timings["predicted_n"],
-        "finish_reason": response["choices"][0]["finish_reason"],
-        # The server's own prompt time, close to the delay before the first token.
-        "time_to_first_token_ms": timings["prompt_ms"],
+        "finish_reason": reply["finish_reason"],
+        "time_to_first_token_ms": reply["time_to_first_token_ms"],
         "prompt_tokens_per_s": timings["prompt_per_second"],
         "reply_tokens_per_s": timings["predicted_per_second"],
-        "total_ms": timings["prompt_ms"] + timings["predicted_ms"],
+        "total_ms": reply["total_ms"],
     }
 
 
 def benchmark(key: str, build: str) -> dict:
     """Benchmark one model on one build. A failure is recorded in the results, not raised."""
     spec = json.loads(PROMPTS_PATH.read_text())
-    server = LlamaServer(gguf_path(key), build=build)
+    server = BenchmarkServer(gguf_path(key), build=build)
     results = {
         "schema_version": 1,
         "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),

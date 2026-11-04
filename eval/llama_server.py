@@ -129,8 +129,7 @@ class LlamaServer:
         self.stop()
         raise ServerError(f"llama-server did not become ready within {timeout_s:.0f} s. See {self.log_path}")
 
-    def chat(self, messages: list[dict], max_tokens: int = 64, timeout_s: float = 300) -> dict:
-        """Send one chat request and return the full JSON response."""
+    def _request(self, messages: list[dict], max_tokens: int, stream: bool) -> urllib.request.Request:
         body = json.dumps({
             "messages": messages,
             "max_tokens": max_tokens,
@@ -140,10 +139,15 @@ class LlamaServer:
             # shared system text from the previous request and prompt times look
             # about 4x better than a phone app loading the model fresh would see.
             "cache_prompt": False,
+            "stream": stream,
         }).encode()
-        request = urllib.request.Request(
+        return urllib.request.Request(
             f"{self.url}/v1/chat/completions", data=body, headers={"Content-Type": "application/json"}
         )
+
+    def chat(self, messages: list[dict], max_tokens: int = 64, timeout_s: float = 300) -> dict:
+        """Send one chat request and return the full JSON response."""
+        request = self._request(messages, max_tokens, stream=False)
         try:
             with urllib.request.urlopen(request, timeout=timeout_s) as r:
                 return json.load(r)
