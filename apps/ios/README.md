@@ -2,7 +2,7 @@
 
 An iPhone app that measures how small language models run on a real phone: whether they load, how fast they answer and how much memory they use. Everything runs on the phone; nothing is sent anywhere.
 
-**Status: early.** The app starts and shows what llama.cpp detects on the phone. Running models and producing results come next, and this page will grow with them.
+**Status: early.** The app can load a model. Generating replies and producing results come next, and this page will grow with them.
 
 ## What you need
 
@@ -43,9 +43,34 @@ Most of this is only needed the first time.
 
 7. If the app won't open because of an untrusted developer, go to **Settings → General → VPN & Device Management**, tap your Apple ID and tap **Trust**. Then press Run in Xcode again.
 
-**It worked if** the app opens and shows the title *Wilo Bench* with some technical text below it.
+**It worked if** the app opens and shows the title *Wilo Bench* with an empty model list.
 
 With a free Apple ID, the app stops opening after 7 days. Press Run again to reinstall it.
+
+## Copy a model onto the iPhone
+
+Start with Qwen 3.5 2B: it's the smallest model, at 1.28 GB. Make sure the iPhone has room for it.
+
+**1. Download it on the Mac,** from the repository folder:
+
+```bash
+curl -L -o Qwen3.5-2B-Q4_K_M.gguf https://huggingface.co/unsloth/Qwen3.5-2B-GGUF/resolve/f6d5376be1edb4d416d56da11e5397a961aca8ae/Qwen3.5-2B-Q4_K_M.gguf
+shasum -a 256 Qwen3.5-2B-Q4_K_M.gguf
+```
+
+The checksum should start with `aaf42c8b` and end with `14699223`. Otherwise, download it again.
+
+**2. Copy it to the iPhone,** with the app installed and the cable connected:
+
+1. Open **Finder** and click your iPhone in the sidebar.
+2. Open the **Files** tab and expand **WiloBench**.
+3. Drag the `.gguf` file onto **WiloBench**, and wait for the copy to finish.
+
+**3. Load it:** open the app and pull down on the list to refresh it. Tap the model.
+
+**It worked if** the status says *Loaded Qwen3.5-2B-Q4_K_M.gguf in ... s*. If the app suddenly closes while loading, iOS probably stopped it for using too much memory. Please note that: it's a useful result.
+
+The model files for the other models are listed in [`models/registry.yaml`](../../models/registry.yaml).
 
 ## If something goes wrong
 
@@ -57,6 +82,8 @@ With a free Apple ID, the app stops opening after 7 days. Press Run again to rei
 | *Failed to register bundle identifier*, or the ID is taken | In `project.yml`, change `com.wilo.benchmark` to something unique, like `com.yourname.wilobench`, and run `apps/ios/setup.sh` again |
 | *Signing requires a development team* | Repeat steps 3 and 4 |
 | The phone isn't listed in Xcode | Unlock it, reconnect the cable and tap **Trust** |
+| The model doesn't appear in the app | Pull down on the list to refresh it, and check the file ends in `.gguf` |
+| *Could not load ...* in the status | The file may be incomplete: check its checksum, and copy it again |
 | The build fails with another error | Send the first red error from Xcode's Issue Navigator (Cmd+5), with your Xcode version |
 
 ## For developers

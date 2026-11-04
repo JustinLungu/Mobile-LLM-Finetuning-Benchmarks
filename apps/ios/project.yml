@@ -37,5 +37,8 @@ targets:
       properties:
         CFBundleDisplayName: Wilo Bench
         UILaunchScreen: {}
+        # Lets model files be copied into the app with Finder or the Files app.
+        UIFileSharingEnabled: true
+        LSSupportsOpeningDocumentsInPlace: true
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
