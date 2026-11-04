@@ -85,15 +85,23 @@ class LlamaServer:
             "--parallel", "1",
             # Thinking mode off, through each model's own chat template. (The
             # blunter --reasoning-budget 0 cuts thinking off mid-way, and Gemma
-            # then writes its reasoning into the answer instead.) Templates
-            # without this switch, like Llama's, ignore it.
-            "--chat-template-kwargs", json.dumps({"enable_thinking": False}),
+            # then writes its reasoning into the answer instead.)
+            "--reasoning", "off",
         ]
+
+    def check_gpu(self) -> None:
+        """Fail if the CUDA build can't see a GPU: llama.cpp would silently run on the CPU instead."""
+        binary = self.command()[0]
+        devices = subprocess.run([binary, "--list-devices"], capture_output=True, text=True).stdout
+        if "CUDA" not in devices:
+            raise ServerError("the cuda build sees no GPU. Rebuild with eval/build_llama_cpp.sh and check nvidia-smi.")
 
     def start(self, timeout_s: float = 300) -> float:
         """Start the server and wait until the model is loaded. Returns the load time in seconds."""
         if not self.model.exists():
             raise ServerError(f"{self.model} not found. Download it with models/download.py.")
+        if self.build == "cuda":
+            self.check_gpu()
         LOG_DIR.mkdir(parents=True, exist_ok=True)
         started = time.perf_counter()
         # The server keeps its own handle to the log, so ours can close right away.

@@ -83,3 +83,10 @@ build cuda \
     -DGGML_CUDA=ON \
     -DCMAKE_CUDA_COMPILER="$NVCC" \
     -DCMAKE_CUDA_ARCHITECTURES="$CUDA_ARCHITECTURES"
+
+# A CUDA build that silently fell back to CPU would still run, only slowly.
+if ! "$SRC/build-cuda/bin/llama-server" --list-devices 2>&1 | grep -q CUDA; then
+    echo "error: the CUDA build does not see a GPU. Check the build log and nvidia-smi." >&2
+    exit 1
+fi
+echo "CUDA build sees the GPU."
