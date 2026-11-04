@@ -1,7 +1,7 @@
 # Mobile-LLM-Finetuning-Benchmarks
 Fine-tuning and benchmarking small LLMs (2–4B) for private on-device reasoning on iPhone and Android, including judgment quality, memory usage, latency, throughput and 4-bit quantization with llama.cpp. Built for Wilo, an AI accountability companion.
 
-> **Status:** Phase 1, setup and measurement. No results yet.
+> **Status:** Phase 1, setup and measurement. Laptop baseline done; phone results are next.
 
 ## Why
 
@@ -38,7 +38,7 @@ For every model, before and after fine-tuning, on every device:
 |---|---|
 | Runs reliably | Loads and completes 20 back-to-back runs without crashing or being killed by the OS |
 | Load time | Time to load the model into memory |
-| Time to first token | Delay before the reply starts, with a ~400-token prompt |
+| Time to first token | Delay before the reply starts, with a ~450-token prompt |
 | Tokens/s | Generation speed |
 | Peak memory | Highest memory use during a run |
 | File size | Size of the 4-bit model file |
@@ -46,14 +46,22 @@ For every model, before and after fine-tuning, on every device:
 
 ## Results
 
-_To be filled in._
+**Laptop baseline** (Intel i9-14900HX, NVIDIA RTX 4070 Laptop GPU; 4-bit models with llama.cpp `b12078`, power mode `quiet`). Medians over 20 runs of about 450-token prompts, except memory, which is the highest value seen.
 
-| Model | Device | Runs reliably | Load time | Time to first token | Tokens/s | Peak memory | File size |
-|---|---|---|---|---|---|---|---|
-| Qwen 3.5 2B | – | – | – | – | – | – | – |
-| Llama 3.2 3B | – | – | – | – | – | – | – |
-| Gemma 4 E2B | – | – | – | – | – | – | – |
-| Qwen 3.5 4B | – | – | – | – | – | – | – |
+| Model | Device | Backend | Runs reliably | Load | First token | Reply speed | Peak memory | GPU memory | File size |
+|---|---|---|---|---|---|---|---|---|---|
+| qwen3.5-2b | ROG Strix G16 G614JIR_G614JIR | cpu | yes (20/20) | 0.4 s | 1655 ms | 45.4 tokens/s | 1.55 GB | – | 1.28 GB |
+| qwen3.5-2b | ROG Strix G16 G614JIR_G614JIR | cuda | yes (20/20) | 0.6 s | 78 ms | 131.9 tokens/s | 1.65 GB | 1.56 GB | 1.28 GB |
+| llama3.2-3b | ROG Strix G16 G614JIR_G614JIR | cpu | yes (20/20) | 0.5 s | 3013 ms | 32.4 tokens/s | 2.63 GB | – | 2.02 GB |
+| llama3.2-3b | ROG Strix G16 G614JIR_G614JIR | cuda | yes (20/20) | 0.7 s | 86 ms | 95.0 tokens/s | 2.37 GB | 2.72 GB | 2.02 GB |
+| qwen3.5-4b | ROG Strix G16 G614JIR_G614JIR | cpu | yes (20/20) | 0.6 s | 4412 ms | 21.5 tokens/s | 3.21 GB | – | 2.74 GB |
+| qwen3.5-4b | ROG Strix G16 G614JIR_G614JIR | cuda | yes (20/20) | 0.8 s | 173 ms | 63.8 tokens/s | 3.11 GB | 3.17 GB | 2.74 GB |
+| gemma4-e2b | ROG Strix G16 G614JIR_G614JIR | cpu | yes (20/20) | 0.6 s | 2527 ms | 36.3 tokens/s | 3.38 GB | – | 3.11 GB |
+| gemma4-e2b | ROG Strix G16 G614JIR_G614JIR | cuda | yes (20/20) | 0.8 s | 87 ms | 111.9 tokens/s | 3.51 GB | 1.83 GB | 3.11 GB |
+
+Laptop numbers are a reference point, and don't predict phone speed or memory. Phone results will be added here.
+
+See [`eval/`](eval/) for how to run the benchmarks and read the columns.
 
 ## Plan
 
@@ -85,7 +93,7 @@ spec ─► data ─► finetune ─► convert ─► eval (computer)
 | [`eval/`](eval/) | Benchmarks with llama.cpp on a computer | Any |
 | [`apps/ios/`](apps/ios/) | iPhone benchmark app (Swift, XcodeGen) | Mac + iPhone |
 | [`apps/android/`](apps/android/) | Android benchmark app (Kotlin, NDK) | Any + Android phone |
-| [`results/`](results/) | Results from all runs, in one shared format | – |
+| [`results/`](results/) | Where results are written, in one shared format (kept local) | – |
 
 ## License
 

@@ -19,8 +19,8 @@ wandb/
 # --- Generated datasets (keep generators and small labelled sets in git) ---
 data/generated/
 
-# --- Raw logs from benchmark runs (results themselves are committed) ---
-results/logs/
+# --- Benchmark results and logs stay local; only the folder's README is committed ---
+results/*/
 
 # --- Python ---
 __pycache__/
