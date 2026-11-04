@@ -29,6 +29,8 @@ from download import load_registry  # noqa: E402
 # defaults that change between versions or adapt to the machine.
 # context size: 4,096 tokens, which is about 3,000 English words.
 DEFAULT_CTX_SIZE = 4096
+# What llama.cpp picks by itself on our laptop's 8 performance cores.
+DEFAULT_THREADS = 8
 
 
 class ServerError(Exception):
@@ -59,10 +61,13 @@ def free_port() -> int:
 
 
 class LlamaServer:
-    def __init__(self, model: Path, build: str = "cpu", ctx_size: int = DEFAULT_CTX_SIZE):
+    def __init__(
+        self, model: Path, build: str = "cpu", ctx_size: int = DEFAULT_CTX_SIZE, threads: int = DEFAULT_THREADS
+    ):
         self.model = model
         self.build = build
         self.ctx_size = ctx_size
+        self.threads = threads
         self.port = free_port()
         self.url = f"http://127.0.0.1:{self.port}"
         self.process: subprocess.Popen | None = None
@@ -77,6 +82,7 @@ class LlamaServer:
             "--host", "127.0.0.1",
             "--port", str(self.port),
             "--ctx-size", str(self.ctx_size),
+            "--threads", str(self.threads),
             # All layers on the GPU for the CUDA build, none for the CPU build.
             "--n-gpu-layers", "all" if self.build == "cuda" else "0",
             # Don't let llama.cpp silently change settings to fit memory.
@@ -130,6 +136,10 @@ class LlamaServer:
             "max_tokens": max_tokens,
             "temperature": 0,  # always pick the most likely token: repeatable output
             "seed": 0,
+            # Process the whole prompt every time. Otherwise the server reuses the
+            # shared system text from the previous request and prompt times look
+            # about 4x better than a phone app loading the model fresh would see.
+            "cache_prompt": False,
         }).encode()
         request = urllib.request.Request(
             f"{self.url}/v1/chat/completions", data=body, headers={"Content-Type": "application/json"}
