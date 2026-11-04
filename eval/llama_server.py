@@ -62,12 +62,18 @@ def free_port() -> int:
 
 class LlamaServer:
     def __init__(
-        self, model: Path, build: str = "cpu", ctx_size: int = DEFAULT_CTX_SIZE, threads: int = DEFAULT_THREADS
+        self,
+        model: Path,
+        build: str = "cpu",
+        ctx_size: int = DEFAULT_CTX_SIZE,
+        threads: int = DEFAULT_THREADS,
+        thinking: bool = False,
     ):
         self.model = model
         self.build = build
         self.ctx_size = ctx_size
         self.threads = threads
+        self.thinking = thinking
         self.port = free_port()
         self.url = f"http://127.0.0.1:{self.port}"
         self.process: subprocess.Popen | None = None
@@ -89,10 +95,10 @@ class LlamaServer:
             "--fit", "off",
             # One request at a time, like a phone app.
             "--parallel", "1",
-            # Thinking mode off, through each model's own chat template. (The
-            # blunter --reasoning-budget 0 cuts thinking off mid-way, and Gemma
-            # then writes its reasoning into the answer instead.)
-            "--reasoning", "off",
+            # Thinking mode, through each model's own chat template; off by default
+            # for benchmarks. (The blunter --reasoning-budget 0 cuts thinking off
+            # mid-way, and Gemma then writes its reasoning into the answer instead.)
+            "--reasoning", "on" if self.thinking else "off",
         ]
 
     def check_gpu(self) -> None:
@@ -129,11 +135,13 @@ class LlamaServer:
         self.stop()
         raise ServerError(f"llama-server did not become ready within {timeout_s:.0f} s. See {self.log_path}")
 
-    def _request(self, messages: list[dict], max_tokens: int, stream: bool) -> urllib.request.Request:
+    def _request(
+        self, messages: list[dict], max_tokens: int, stream: bool, temperature: float = 0
+    ) -> urllib.request.Request:
         body = json.dumps({
             "messages": messages,
             "max_tokens": max_tokens,
-            "temperature": 0,  # always pick the most likely token: repeatable output
+            "temperature": temperature,  # 0 always picks the most likely token: repeatable output
             "seed": 0,
             # Process the whole prompt every time. Otherwise the server reuses the
             # shared system text from the previous request and prompt times look
@@ -145,9 +153,11 @@ class LlamaServer:
             f"{self.url}/v1/chat/completions", data=body, headers={"Content-Type": "application/json"}
         )
 
-    def chat(self, messages: list[dict], max_tokens: int = 64, timeout_s: float = 300) -> dict:
+    def chat(
+        self, messages: list[dict], max_tokens: int = 64, timeout_s: float = 300, temperature: float = 0
+    ) -> dict:
         """Send one chat request and return the full JSON response."""
-        request = self._request(messages, max_tokens, stream=False)
+        request = self._request(messages, max_tokens, stream=False, temperature=temperature)
         try:
             with urllib.request.urlopen(request, timeout=timeout_s) as r:
                 return json.load(r)
