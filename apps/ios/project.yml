@@ -26,6 +26,8 @@ targets:
       # with fetch_framework.sh.
       - framework: Frameworks/llama.xcframework
         embed: true
+    # Needed so that xcodebuild can find a scheme without Xcode opening the project first.
+    scheme: {}
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.wilo.benchmark

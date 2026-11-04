@@ -1,0 +1,37 @@
+# Compile the iOS app on a real Mac, because it can't be built on Linux.
+# This checks that the setup script, project file and Swift code all work. It
+# can't show that a model runs well: that needs a real iPhone.
+
+name: iOS build
+
+on:
+  push:
+    paths:
+      - "apps/ios/**"
+      - "eval/llama_cpp.env"
+      - "spec/rendered_prompts.json"
+      - ".github/workflows/ios-build.yml"
+  workflow_dispatch:  # also allows starting it by hand from the Actions tab
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: macos-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up the project
+        run: apps/ios/setup.sh --no-open
+
+      - name: Compile for iPhone
+        # There is no signing here: the result is only compiled, never installed.
+        # The llama.cpp library has no simulator version, so this targets a real device.
+        run: |
+          xcodebuild build \
+            -project apps/ios/WiloBench.xcodeproj \
+            -scheme WiloBench \
+            -destination "generic/platform=iOS" \
+            CODE_SIGNING_ALLOWED=NO
