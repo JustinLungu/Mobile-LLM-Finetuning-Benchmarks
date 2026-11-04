@@ -11,6 +11,7 @@ Results follow spec/results.schema.json and go to results/linux/ by default.
 import argparse
 import json
 import platform
+import re
 import subprocess
 import sys
 import time
@@ -83,6 +84,40 @@ class BenchmarkServer(LlamaServer):
             "time_to_first_token_ms": first_token_ms,
             "total_ms": total_ms,
         }
+
+
+    def peak_memory(self) -> dict:
+        """Memory use of the running server, for the results file."""
+        status = Path(f"/proc/{self.process.pid}/status").read_text()
+
+        def kilobytes(field: str) -> int:
+            return int(re.search(rf"{field}:\s+(\d+) kB", status).group(1))
+
+        memory = {
+            # VmHWM is the kernel's own high-water mark for this process, so
+            # short peaks count even though we only read it now and then.
+            "bytes": kilobytes("VmHWM") * 1024,
+            "method": "VmHWM",
+            # Current, not peak; it barely changes once the model is loaded.
+            "private_bytes": kilobytes("RssAnon") * 1024,
+        }
+        gpu_bytes = self.gpu_memory_bytes()
+        if gpu_bytes is not None:
+            memory["gpu_bytes"] = gpu_bytes
+        return memory
+
+    def gpu_memory_bytes(self) -> int | None:
+        if self.build != "cuda":
+            return None
+        output = subprocess.run(
+            ["nvidia-smi", "--query-compute-apps=pid,used_gpu_memory", "--format=csv,noheader,nounits"],
+            capture_output=True, text=True,
+        ).stdout
+        for line in output.splitlines():
+            pid, mebibytes = [part.strip() for part in line.split(",")]
+            if int(pid) == self.process.pid and mebibytes.isdigit():
+                return int(mebibytes) * 1024**2
+        return None
 
 
 def read_text(path: str) -> str | None:
@@ -205,6 +240,8 @@ def benchmark(key: str, build: str) -> dict:
             for prompt in spec["prompts"]:
                 results["runs"].append(measure(server, spec, prompt, repeat=0))
                 results["reliability"]["runs_completed"] += 1
+                # Read after every prompt, so a later crash doesn't lose it.
+                results["peak_memory"] = server.peak_memory()
     except ServerError as e:
         results["reliability"]["error"] = str(e)
     return results
@@ -259,7 +296,12 @@ def main(argv: list[str] | None = None) -> int:
                 continue
             runs = results["runs"]
             speed = sum(r["reply_tokens_per_s"] for r in runs) / len(runs)
-            print(f"load {results['load_times_s'][0]:5.1f} s   reply {speed:6.1f} tokens/s   {path.name}")
+            memory = results["peak_memory"]
+            gpu = f"  gpu {memory['gpu_bytes'] / 1e9:4.2f} GB" if "gpu_bytes" in memory else ""
+            print(
+                f"load {results['load_times_s'][0]:4.1f} s   reply {speed:6.1f} tokens/s   "
+                f"memory {memory['bytes'] / 1e9:4.2f} GB, private {memory['private_bytes'] / 1e9:4.2f} GB{gpu}"
+            )
     return 1 if failed else 0
 
 

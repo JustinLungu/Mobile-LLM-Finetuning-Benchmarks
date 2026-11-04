@@ -95,6 +95,9 @@ class LlamaServer:
             "--fit", "off",
             # One request at a time, like a phone app.
             "--parallel", "1",
+            # Repacking keeps a second copy of the weights in a CPU-friendly layout.
+            # Measured on our laptop: up to 1.3 GB more memory, and no faster.
+            "--no-repack",
             # Thinking mode, through each model's own chat template; off by default
             # for benchmarks. (The blunter --reasoning-budget 0 cuts thinking off
             # mid-way, and Gemma then writes its reasoning into the answer instead.)

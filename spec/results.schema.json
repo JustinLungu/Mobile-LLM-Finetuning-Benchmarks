@@ -88,6 +88,7 @@
       "properties": {
         "bytes": { "type": ["integer", "null"], "minimum": 0 },
         "method": { "type": ["string", "null"], "description": "e.g. VmHWM on Linux, phys_footprint on iOS." },
+        "private_bytes": { "type": "integer", "minimum": 0, "description": "The part of bytes the process owns, excluding pages mapped from the model file, which the OS can drop and reload. Where it can be measured." },
         "gpu_bytes": { "type": "integer", "minimum": 0, "description": "Separate GPU memory, where it can be measured." }
       }
     },
