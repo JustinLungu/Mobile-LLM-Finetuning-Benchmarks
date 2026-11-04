@@ -1,0 +1,39 @@
+# Xcode project definition. Generate the .xcodeproj from this file with:
+#     cd apps/ios && xcodegen generate
+# The generated project is git-ignored; change settings here, not in Xcode.
+
+name: WiloBench
+
+options:
+  bundleIdPrefix: com.wilo
+  deploymentTarget:
+    iOS: "16.4"  # the minimum of the llama.cpp library
+
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    # Set your own Apple team in Xcode, or pass DEVELOPMENT_TEAM to xcodebuild.
+    CODE_SIGN_STYLE: Automatic
+
+targets:
+  WiloBench:
+    type: application
+    platform: iOS
+    sources:
+      - WiloBench
+    dependencies:
+      # Dynamic library, so it has to be embedded in the app. Fetch it first
+      # with fetch_framework.sh.
+      - framework: Frameworks/llama.xcframework
+        embed: true
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.wilo.benchmark
+        TARGETED_DEVICE_FAMILY: "1"  # iPhone only
+    info:
+      path: WiloBench/Info.plist
+      properties:
+        CFBundleDisplayName: Wilo Bench
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
