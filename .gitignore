@@ -1,3 +1,6 @@
+# --- Third-party source and builds (fetched by scripts) ---
+third_party/
+
 # --- Model weights and large artifacts (download with models/ scripts) ---
 *.gguf
 *.safetensors
@@ -15,6 +18,9 @@ wandb/
 
 # --- Generated datasets (keep generators and small labelled sets in git) ---
 data/generated/
+
+# --- Benchmark results and logs stay local; only the folder's README is committed ---
+results/*/
 
 # --- Python ---
 __pycache__/
