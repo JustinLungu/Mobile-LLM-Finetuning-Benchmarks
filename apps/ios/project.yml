@@ -21,6 +21,8 @@ targets:
     platform: iOS
     sources:
       - WiloBench
+      - path: ../../spec/rendered_prompts.json
+        buildPhase: resources
     dependencies:
       # Dynamic library, so it has to be embedded in the app. Fetch it first
       # with fetch_framework.sh.

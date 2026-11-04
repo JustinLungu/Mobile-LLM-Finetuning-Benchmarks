@@ -2,7 +2,7 @@
 
 An iPhone app that measures how small language models run on a real phone: whether they load, how fast they answer and how much memory they use. Everything runs on the phone; nothing is sent anywhere.
 
-**Status: early.** The app can load a model. Generating replies and producing results come next, and this page will grow with them.
+**Status: early.** The app can load a model and generate a reply. Timing, memory and results come next, and this page will grow with them.
 
 ## What you need
 
@@ -71,6 +71,14 @@ The checksum should start with `aaf42c8b` and end with `14699223`. Otherwise, do
 **It worked if** the status says *Loaded Qwen3.5-2B-Q4_K_M.gguf in ... s*. If the app suddenly closes while loading, iOS probably stopped it for using too much memory. Please note that: it's a useful result.
 
 The model files for the other models are listed in [`models/registry.yaml`](../../models/registry.yaml).
+
+## Generate a reply
+
+After a model has loaded, tap a prompt under **Try a prompt**, such as `manipulation`, and wait.
+
+**It worked if** a reply appears, starting with `{` and mentioning `relation` and `decision`, and the status shows the token counts, with no warning about expected prompt tokens.
+
+**Please note down for the team:** which model, whether it loaded, how long loading and the reply took, and whether the app closed unexpectedly.
 
 ## If something goes wrong
 

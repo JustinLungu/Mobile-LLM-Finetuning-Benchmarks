@@ -64,6 +64,8 @@ def main() -> int:
         "llama_cpp_tag": engine["llama_cpp_tag"],
         "max_tokens": spec["max_tokens"],
         "prompt_ids": [prompt["id"] for prompt in spec["prompts"]],
+        # So the apps can tell which model a file on the phone is.
+        "files": {key: model["gguf"]["file"] for key, model in models.items()},
         "models": {},
     }
     try:
