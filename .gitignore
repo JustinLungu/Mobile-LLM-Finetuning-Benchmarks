@@ -35,6 +35,8 @@ venv/
 # --- iOS / Xcode ---
 apps/ios/*.xcodeproj/
 apps/ios/*.xcworkspace/
+apps/ios/Frameworks/
+apps/ios/WiloBench/Info.plist
 DerivedData/
 xcuserdata/
 *.xcuserstate
