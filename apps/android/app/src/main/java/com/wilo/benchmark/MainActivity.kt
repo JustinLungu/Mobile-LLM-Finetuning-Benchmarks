@@ -16,10 +16,13 @@ class MainActivity : Activity() {
     private var loaded: LoadedModel? = null
     private var loadedModelKey: String? = null
     private lateinit var prompts: RenderedPrompts
+    private lateinit var probe: DeviceProbe
+    private var memory: MemoryPeak? = null
 
     private lateinit var modelList: LinearLayout
     private lateinit var promptList: LinearLayout
     private lateinit var status: TextView
+    private lateinit var deviceStatus: TextView
     private lateinit var reply: TextView
 
     /** Where model files go: Android/data/com.wilo.benchmark/files/ on the phone. */
@@ -29,6 +32,7 @@ class MainActivity : Activity() {
         super.onCreate(savedInstanceState)
         LlamaNative.init(applicationInfo.nativeLibraryDir)
         prompts = RenderedPrompts.load(this)
+        probe = DeviceProbe(this)
 
         val content = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -47,6 +51,8 @@ class MainActivity : Activity() {
         content.addView(heading("Status"))
         status = TextView(this).apply { text = "No model loaded." }
         content.addView(status)
+        deviceStatus = TextView(this).apply { textSize = 12f }
+        content.addView(deviceStatus)
         reply = TextView(this).apply { textSize = 12f; typeface = android.graphics.Typeface.MONOSPACE }
         content.addView(reply)
         content.addView(heading("llama.cpp on this phone"))
@@ -83,6 +89,13 @@ class MainActivity : Activity() {
                 setOnClickListener { load(file) }
             })
         }
+    }
+
+    /** Read memory and temperature (on the worker thread), and return the line to show. */
+    private fun readDevice(): String {
+        val memory = memory ?: return ""
+        memory.sample()
+        return "${memory.summary} Temperature: ${probe.thermalState()}."
     }
 
     /** One button per benchmark prompt, once a benchmark model has loaded. */
@@ -123,8 +136,10 @@ class MainActivity : Activity() {
             } catch (e: IllegalStateException) {
                 (e.message ?: "Generating failed.") to ""
             }
+            val device = readDevice()
             runOnUiThread {
                 status.text = message
+                deviceStatus.text = device
                 reply.text = text
             }
         }
@@ -132,6 +147,7 @@ class MainActivity : Activity() {
 
     private fun load(file: File) {
         status.text = "Loading ${file.name}..."
+        deviceStatus.text = ""
         reply.text = ""
         loadedModelKey = null
         showPrompts()
@@ -139,6 +155,8 @@ class MainActivity : Activity() {
             // Free the previous model first, so two are never in memory at once.
             loaded?.close()
             loaded = null
+            // Each model gets its own peak.
+            memory = MemoryPeak(probe)
             val started = System.nanoTime()
             var key: String? = null
             val message = try {
@@ -150,8 +168,10 @@ class MainActivity : Activity() {
             } catch (e: IllegalStateException) {
                 e.message ?: "Loading failed."
             }
+            val device = if (loaded != null) readDevice() else ""
             runOnUiThread {
                 status.text = message
+                deviceStatus.text = device
                 loadedModelKey = key
                 showPrompts()
             }
