@@ -106,13 +106,14 @@ class MainActivity : Activity() {
         reply.text = ""
         worker.execute {
             val model = loaded
-            val started = System.nanoTime()
             val (message, text) = try {
                 val result = model!!.generate(prompt.text, prompts.maxTokens)
-                val seconds = (System.nanoTime() - started) / 1e9
+                val t = result.timing
                 var line = String.format(
-                    Locale.US, "%d prompt tokens, %d reply tokens in %.1f s (%s).",
-                    result.promptTokens, result.replyTokens, seconds, result.finishReason,
+                    Locale.US, "%d prompt tokens, %d reply tokens in %.1f s (%s).\n" +
+                        "First token after %.0f ms. Prompt %.1f tokens/s, reply %.1f tokens/s.",
+                    result.promptTokens, result.replyTokens, t.totalMs / 1000, result.finishReason,
+                    t.timeToFirstTokenMs, t.promptTokensPerSecond, t.replyTokensPerSecond,
                 )
                 // A different count means the phone isn't seeing what the laptop saw.
                 if (result.promptTokens != prompt.tokens) {
