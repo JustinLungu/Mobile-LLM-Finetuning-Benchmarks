@@ -9,6 +9,7 @@ on:
     paths:
       - "apps/android/**"
       - "eval/llama_cpp.env"
+      - "eval/fetch_llama_cpp.sh"
       - "spec/rendered_prompts.json"
       - ".github/workflows/android-build.yml"
   workflow_dispatch:  # also allows starting it by hand from the Actions tab
@@ -29,6 +30,9 @@ jobs:
           distribution: temurin
           java-version: "17"
           cache: gradle
+
+      - name: Get the llama.cpp source
+        run: eval/fetch_llama_cpp.sh
 
       - name: Build the APK
         working-directory: apps/android
