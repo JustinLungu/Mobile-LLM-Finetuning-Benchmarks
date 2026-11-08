@@ -19,8 +19,17 @@ final class AppState: ObservableObject {
     @Published var reply = ""
     @Published var loadedModelKey: String?
 
+    @Published var deviceStatus = ""
+
     let prompts = try? RenderedPrompts.loadFromBundle()
     private var loaded: LoadedModel?
+    private var memory = MemoryPeak()
+
+    /// Read memory and temperature, and show them.
+    private func updateDeviceStatus() {
+        memory.sample()
+        deviceStatus = memory.summary + " Temperature: \(DeviceProbe.thermalState())."
+    }
 
     var promptIds: [String] { prompts?.promptIds ?? [] }
 
@@ -41,6 +50,9 @@ final class AppState: ObservableObject {
         loaded = nil
         loadedModelKey = nil
         reply = ""
+        // Each model gets its own peak.
+        memory = MemoryPeak()
+        deviceStatus = ""
         status = "Loading \(file.lastPathComponent)..."
 
         let started = ProcessInfo.processInfo.systemUptime  // only moves forward
@@ -48,6 +60,7 @@ final class AppState: ObservableObject {
             loaded = try await Task.detached { try LoadedModel(path: file.path) }.value
             let seconds = ProcessInfo.processInfo.systemUptime - started
             status = "Loaded \(file.lastPathComponent) in \(String(format: "%.1f", seconds)) s."
+            updateDeviceStatus()
             loadedModelKey = prompts?.modelKey(forFile: file.lastPathComponent)
             if loadedModelKey == nil {
                 status += " It isn't one of the benchmark models, so it has no prompts."
@@ -79,6 +92,7 @@ final class AppState: ObservableObject {
                     format: "First token after %.0f ms. Prompt %.1f tokens/s, reply %.1f tokens/s.",
                     t.timeToFirstTokenMs, t.promptTokensPerSecond, t.replyTokensPerSecond
                 )
+            updateDeviceStatus()
             // A different count means the phone isn't seeing what the laptop saw.
             if result.promptTokens != prompt.tokens {
                 status += " Warning: expected \(prompt.tokens) prompt tokens."
@@ -122,6 +136,9 @@ struct ContentView: View {
                 }
                 Section("Status") {
                     Text(state.status)
+                    if !state.deviceStatus.isEmpty {
+                        Text(state.deviceStatus).foregroundStyle(.secondary)
+                    }
                 }
                 if !state.reply.isEmpty {
                     Section("Reply") {
