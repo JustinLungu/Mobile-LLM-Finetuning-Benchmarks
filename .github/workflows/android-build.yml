@@ -1,0 +1,55 @@
+# Build the Android app on every relevant push, and keep the installable APK.
+# This checks that the app builds. It can't show that a model runs well: that
+# needs a real phone.
+
+name: Android build
+
+on:
+  push:
+    paths:
+      - "apps/android/**"
+      - "eval/llama_cpp.env"
+      - "eval/fetch_llama_cpp.sh"
+      - "spec/rendered_prompts.json"
+      - ".github/workflows/android-build.yml"
+  workflow_dispatch:  # also allows starting it by hand from the Actions tab
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      # The Android SDK is preinstalled on GitHub's Linux runners; Java 17 isn't the default.
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: gradle
+
+      # The runner has the Android SDK, but not this NDK and CMake. Gradle can't
+      # install them itself until their licences are accepted.
+      # Keep these versions in sync with apps/android/app/build.gradle.kts.
+      - name: Install the NDK and CMake
+        run: |
+          SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          "$SDKMANAGER" --licenses < <(yes) > /dev/null
+          "$SDKMANAGER" --install "ndk;29.0.13113456" "cmake;3.31.6" > /dev/null
+
+      - name: Get the llama.cpp source
+        run: eval/fetch_llama_cpp.sh
+
+      - name: Build the APK
+        working-directory: apps/android
+        run: ./gradlew assembleDebug
+
+      # Downloadable from the run's page on GitHub, under Artifacts.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wilo-bench-debug-apk
+          path: apps/android/app/build/outputs/apk/debug/*.apk
+          retention-days: 14

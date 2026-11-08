@@ -32,9 +32,6 @@ git clone https://github.com/JustinLungu/Mobile-LLM-Finetuning-Benchmarks.git
 cd Mobile-LLM-Finetuning-Benchmarks
 ```
 ```bash
-git checkout feat/m3-ios-app
-```
-```bash
 apps/ios/setup.sh
 ```
 
@@ -140,7 +137,7 @@ Please send the team this, for each model you tried:
 |---|---|---|
 | Part 1 | `error: Xcode not found` | Install Xcode from the App Store, open it once, and run `apps/ios/setup.sh` again |
 | Part 1 | `Homebrew are both missing` | Install [Homebrew](https://brew.sh), and run `apps/ios/setup.sh` again |
-| Part 1 | `apps/ios/setup.sh: No such file` | You're in the wrong folder or branch: repeat the `cd` and `git checkout` commands |
+| Part 1 | `apps/ios/setup.sh: No such file` | You're in the wrong folder: repeat the `cd` command, and check you're on the `main` branch with `git status` |
 | Part 3 | *Signing requires a development team* | Repeat steps 1–4 of Part 3 |
 | Part 3 | *Failed to register bundle identifier*, or the ID is taken | In `apps/ios/project.yml`, change `com.wilo.benchmark` to something unique, like `com.yourname.wilobench`. Run `apps/ios/setup.sh` again, then repeat Part 3 |
 | Part 3 | *No such module 'llama'*, or `llama.xcframework` not found | Run `apps/ios/setup.sh` again, and close and reopen Xcode |
