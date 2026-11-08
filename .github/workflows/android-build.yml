@@ -1,0 +1,42 @@
+# Build the Android app on every relevant push, and keep the installable APK.
+# This checks that the app builds. It can't show that a model runs well: that
+# needs a real phone.
+
+name: Android build
+
+on:
+  push:
+    paths:
+      - "apps/android/**"
+      - "eval/llama_cpp.env"
+      - "spec/rendered_prompts.json"
+      - ".github/workflows/android-build.yml"
+  workflow_dispatch:  # also allows starting it by hand from the Actions tab
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      # The Android SDK is preinstalled on GitHub's Linux runners; Java 17 isn't the default.
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: gradle
+
+      - name: Build the APK
+        working-directory: apps/android
+        run: ./gradlew assembleDebug
+
+      # Downloadable from the run's page on GitHub, under Artifacts.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wilo-bench-debug-apk
+          path: apps/android/app/build/outputs/apk/debug/*.apk
+          retention-days: 14
