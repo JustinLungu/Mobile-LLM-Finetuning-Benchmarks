@@ -22,6 +22,30 @@ struct Reply: Sendable {
     let promptTokens: Int
     let replyTokens: Int
     let finishReason: String
+    let timing: Timing
+}
+
+/// How long one reply took, measured the same way as the laptop benchmarks.
+struct Timing: Sendable {
+    /// From starting the request until the first token of the reply exists.
+    let timeToFirstTokenMs: Double
+    /// Processing the prompt only.
+    let promptMs: Double
+    /// Writing the reply only, after the prompt was processed.
+    let replyMs: Double
+    /// The whole request.
+    let totalMs: Double
+
+    let promptTokens: Int
+    let replyTokens: Int
+
+    var promptTokensPerSecond: Double { promptMs > 0 ? Double(promptTokens) / promptMs * 1000 : 0 }
+    var replyTokensPerSecond: Double { replyMs > 0 ? Double(replyTokens) / replyMs * 1000 : 0 }
+}
+
+/// Milliseconds on a clock that only moves forward, for measuring durations.
+private func nowMs() -> Double {
+    Double(DispatchTime.now().uptimeNanoseconds) / 1_000_000
 }
 
 /// A model in memory, ready to generate. Freeing this object frees its memory.
@@ -62,6 +86,7 @@ final class LoadedModel: @unchecked Sendable {
     /// Generate a reply to already-rendered prompt text, one token at a time.
     /// Always picks the most likely token, like temperature 0 on the laptop.
     func generate(prompt: String, maxTokens: Int) throws -> Reply {
+        let started = nowMs()
         let vocab = llama_model_get_vocab(model)
         var promptTokens = try tokenize(prompt, vocab: vocab)
         let promptTokenCount = promptTokens.count
@@ -77,12 +102,20 @@ final class LoadedModel: @unchecked Sendable {
             llama_decode(context, llama_batch_get_one(buffer.baseAddress, Int32(buffer.count)))
         }
         guard status == 0 else { throw LlamaError.generationFailed(status) }
+        // On the GPU, llama_decode can return before the work is done. Wait for
+        // it, so the prompt time is real.
+        llama_synchronize(context)
+        let promptDone = nowMs()
 
+        var firstTokenAt: Double?
         var replyBytes: [UInt8] = []
         var replyTokenCount = 0
         var finishReason = "length"
         while replyTokenCount < maxTokens {
             var token = llama_sampler_sample(sampler, context, -1)
+            if firstTokenAt == nil {
+                firstTokenAt = nowMs()
+            }
             if llama_vocab_is_eog(vocab, token) {
                 finishReason = "stop"
                 break
@@ -96,11 +129,22 @@ final class LoadedModel: @unchecked Sendable {
             guard status == 0 else { throw LlamaError.generationFailed(status) }
         }
 
+        llama_synchronize(context)
+        let finished = nowMs()
+
         return Reply(
             text: String(decoding: replyBytes, as: UTF8.self),
             promptTokens: promptTokenCount,
             replyTokens: replyTokenCount,
-            finishReason: finishReason
+            finishReason: finishReason,
+            timing: Timing(
+                timeToFirstTokenMs: (firstTokenAt ?? finished) - started,
+                promptMs: promptDone - started,
+                replyMs: finished - promptDone,
+                totalMs: finished - started,
+                promptTokens: promptTokenCount,
+                replyTokens: replyTokenCount
+            )
         )
     }
 

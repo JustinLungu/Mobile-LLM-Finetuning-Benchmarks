@@ -43,10 +43,10 @@ final class AppState: ObservableObject {
         reply = ""
         status = "Loading \(file.lastPathComponent)..."
 
-        let started = Date()
+        let started = ProcessInfo.processInfo.systemUptime  // only moves forward
         do {
             loaded = try await Task.detached { try LoadedModel(path: file.path) }.value
-            let seconds = Date().timeIntervalSince(started)
+            let seconds = ProcessInfo.processInfo.systemUptime - started
             status = "Loaded \(file.lastPathComponent) in \(String(format: "%.1f", seconds)) s."
             loadedModelKey = prompts?.modelKey(forFile: file.lastPathComponent)
             if loadedModelKey == nil {
@@ -66,16 +66,19 @@ final class AppState: ObservableObject {
         reply = ""
         status = "Generating a reply to \(promptId)..."
 
-        let started = Date()
         let maxTokens = prompts.maxTokens
         do {
             let result = try await Task.detached {
                 try model.generate(prompt: prompt.text, maxTokens: maxTokens)
             }.value
-            let seconds = Date().timeIntervalSince(started)
+            let t = result.timing
             reply = result.text
             status = "\(result.promptTokens) prompt tokens, \(result.replyTokens) reply tokens "
-                + "in \(String(format: "%.1f", seconds)) s (\(result.finishReason))."
+                + "in \(String(format: "%.1f", t.totalMs / 1000)) s (\(result.finishReason)).\n"
+                + String(
+                    format: "First token after %.0f ms. Prompt %.1f tokens/s, reply %.1f tokens/s.",
+                    t.timeToFirstTokenMs, t.promptTokensPerSecond, t.replyTokensPerSecond
+                )
             // A different count means the phone isn't seeing what the laptop saw.
             if result.promptTokens != prompt.tokens {
                 status += " Warning: expected \(prompt.tokens) prompt tokens."
