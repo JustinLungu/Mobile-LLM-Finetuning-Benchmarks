@@ -1,0 +1,8 @@
+# The same versions as llama.cpp's own Android example (examples/llama.android).
+[versions]
+agp = "8.13.2"
+kotlin = "2.3.0"
+
+[plugins]
+android-application = { id = "com.android.application", version.ref = "agp" }
+kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
