@@ -31,6 +31,15 @@ jobs:
           java-version: "17"
           cache: gradle
 
+      # The runner has the Android SDK, but not this NDK and CMake. Gradle can't
+      # install them itself until their licences are accepted.
+      # Keep these versions in sync with apps/android/app/build.gradle.kts.
+      - name: Install the NDK and CMake
+        run: |
+          SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          "$SDKMANAGER" --licenses < <(yes) > /dev/null
+          "$SDKMANAGER" --install "ndk;29.0.13113456" "cmake;3.31.6" > /dev/null
+
       - name: Get the llama.cpp source
         run: eval/fetch_llama_cpp.sh
 
