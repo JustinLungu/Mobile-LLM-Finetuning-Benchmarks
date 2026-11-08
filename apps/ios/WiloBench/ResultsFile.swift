@@ -72,7 +72,7 @@ struct ResultsFile: Codable {
 
     struct Run: Codable {
         var promptId: String
-        var repeat: Int
+        var `repeat`: Int  // backticks: `repeat` is also a Swift keyword
         var promptTokens: Int
         var replyTokens: Int
         var finishReason: String
