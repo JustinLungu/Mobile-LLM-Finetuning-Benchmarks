@@ -14,9 +14,13 @@ class MainActivity : Activity() {
     /** Models and generation run here, so the screen keeps responding. */
     private val worker = Executors.newSingleThreadExecutor()
     private var loaded: LoadedModel? = null
+    private var loadedModelKey: String? = null
+    private lateinit var prompts: RenderedPrompts
 
     private lateinit var modelList: LinearLayout
+    private lateinit var promptList: LinearLayout
     private lateinit var status: TextView
+    private lateinit var reply: TextView
 
     /** Where model files go: Android/data/com.wilo.benchmark/files/ on the phone. */
     private val modelDir: File get() = getExternalFilesDir(null)!!
@@ -24,6 +28,7 @@ class MainActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         LlamaNative.init(applicationInfo.nativeLibraryDir)
+        prompts = RenderedPrompts.load(this)
 
         val content = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -37,9 +42,13 @@ class MainActivity : Activity() {
             text = "Refresh list"
             setOnClickListener { refreshModelList() }
         })
+        promptList = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        content.addView(promptList)
         content.addView(heading("Status"))
         status = TextView(this).apply { text = "No model loaded." }
         content.addView(status)
+        reply = TextView(this).apply { textSize = 12f; typeface = android.graphics.Typeface.MONOSPACE }
+        content.addView(reply)
         content.addView(heading("llama.cpp on this phone"))
         content.addView(TextView(this).apply { text = LlamaNative.systemInfo(); textSize = 12f })
 
@@ -76,21 +85,75 @@ class MainActivity : Activity() {
         }
     }
 
+    /** One button per benchmark prompt, once a benchmark model has loaded. */
+    private fun showPrompts() {
+        promptList.removeAllViews()
+        if (loadedModelKey == null) return
+        promptList.addView(heading("Try a prompt"))
+        for (promptId in prompts.promptIds) {
+            promptList.addView(Button(this).apply {
+                text = promptId
+                isAllCaps = false
+                setOnClickListener { runPrompt(promptId) }
+            })
+        }
+    }
+
+    private fun runPrompt(promptId: String) {
+        val key = loadedModelKey ?: return
+        val prompt = prompts.prompt(key, promptId)
+        status.text = "Generating a reply to $promptId..."
+        reply.text = ""
+        worker.execute {
+            val model = loaded
+            val started = System.nanoTime()
+            val (message, text) = try {
+                val result = model!!.generate(prompt.text, prompts.maxTokens)
+                val seconds = (System.nanoTime() - started) / 1e9
+                var line = String.format(
+                    Locale.US, "%d prompt tokens, %d reply tokens in %.1f s (%s).",
+                    result.promptTokens, result.replyTokens, seconds, result.finishReason,
+                )
+                // A different count means the phone isn't seeing what the laptop saw.
+                if (result.promptTokens != prompt.tokens) {
+                    line += " Warning: expected ${prompt.tokens} prompt tokens."
+                }
+                line to result.text
+            } catch (e: IllegalStateException) {
+                (e.message ?: "Generating failed.") to ""
+            }
+            runOnUiThread {
+                status.text = message
+                reply.text = text
+            }
+        }
+    }
+
     private fun load(file: File) {
         status.text = "Loading ${file.name}..."
+        reply.text = ""
+        loadedModelKey = null
+        showPrompts()
         worker.execute {
             // Free the previous model first, so two are never in memory at once.
             loaded?.close()
             loaded = null
             val started = System.nanoTime()
+            var key: String? = null
             val message = try {
                 loaded = LoadedModel(file)
                 val seconds = (System.nanoTime() - started) / 1e9
-                String.format(Locale.US, "Loaded %s in %.1f s.", file.name, seconds)
+                key = prompts.modelKey(file.name)
+                String.format(Locale.US, "Loaded %s in %.1f s.", file.name, seconds) +
+                    if (key == null) " It isn't one of the benchmark models, so it has no prompts." else ""
             } catch (e: IllegalStateException) {
                 e.message ?: "Loading failed."
             }
-            runOnUiThread { status.text = message }
+            runOnUiThread {
+                status.text = message
+                loadedModelKey = key
+                showPrompts()
+            }
         }
     }
 }

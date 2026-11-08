@@ -44,6 +44,14 @@ android {
         }
     }
 
+    sourceSets {
+        getByName("main") {
+            // Bundles spec/ in the app, for rendered_prompts.json. The other files
+            // there are only a few kilobytes.
+            assets.srcDir("../../../spec")
+        }
+    }
+
     // The same NDK as llama.cpp's Android example; Android Studio installs it if needed.
     ndkVersion = "29.0.13113456"
 

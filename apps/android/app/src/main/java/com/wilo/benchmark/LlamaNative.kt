@@ -17,4 +17,10 @@ object LlamaNative {
 
     /** Free a model loaded with loadModel. */
     external fun freeModel(handle: Long)
+
+    /** Generate a reply to rendered prompt text. Throws IllegalStateException on failure. */
+    external fun generate(handle: Long, prompt: String, maxTokens: Int): NativeReply
 }
+
+/** Built by the native code; LoadedModel turns it into a Reply. */
+class NativeReply(val text: ByteArray, val promptTokens: Int, val replyTokens: Int, val finishReason: String)

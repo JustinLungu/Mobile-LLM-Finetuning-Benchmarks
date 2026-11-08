@@ -4,6 +4,7 @@
 #include <jni.h>
 
 #include <string>
+#include <vector>
 
 #include "ggml-backend.h"
 #include "llama.h"
@@ -68,4 +69,64 @@ Java_com_wilo_benchmark_LlamaNative_freeModel(JNIEnv *, jobject, jlong handle) {
     llama_free(session->context);
     llama_model_free(session->model);
     delete session;
+}
+
+// Generate a reply to already-rendered prompt text, one token at a time. Always
+// picks the most likely token, like temperature 0 on the laptop. Returns a
+// NativeReply; the text goes back as UTF-8 bytes, because JNI strings use a
+// modified UTF-8 that can't hold every character.
+extern "C" JNIEXPORT jobject JNICALL
+Java_com_wilo_benchmark_LlamaNative_generate(JNIEnv *env, jobject, jlong handle, jstring prompt_text, jint max_tokens) {
+    auto *session = reinterpret_cast<Session *>(handle);
+    const llama_vocab *vocab = llama_model_get_vocab(session->model);
+
+    // Same options as eval/render_prompts.py, so the token counts can be compared.
+    const char *text = env->GetStringUTFChars(prompt_text, nullptr);
+    const std::string prompt = text;
+    env->ReleaseStringUTFChars(prompt_text, text);
+    std::vector<llama_token> tokens(prompt.size() + 1);
+    const int count = llama_tokenize(vocab, prompt.c_str(), (int32_t) prompt.size(),
+                                     tokens.data(), (int32_t) tokens.size(), true, true);
+    if (count < 0) {
+        throw_error(env, "Could not tokenize the prompt.");
+        return nullptr;
+    }
+    tokens.resize(count);
+
+    // Forget the previous prompt, so nothing is reused between runs.
+    llama_memory_clear(llama_get_memory(session->context), true);
+
+    llama_sampler *sampler = llama_sampler_chain_init(llama_sampler_chain_default_params());
+    llama_sampler_chain_add(sampler, llama_sampler_init_greedy());
+
+    int status = llama_decode(session->context, llama_batch_get_one(tokens.data(), (int32_t) tokens.size()));
+    std::string reply;
+    int reply_tokens = 0;
+    const char *finish_reason = "length";
+    while (status == 0 && reply_tokens < max_tokens) {
+        llama_token token = llama_sampler_sample(sampler, session->context, -1);
+        if (llama_vocab_is_eog(vocab, token)) {
+            finish_reason = "stop";
+            break;
+        }
+        char piece[256];
+        const int length = llama_token_to_piece(vocab, token, piece, sizeof(piece), 0, false);
+        if (length > 0) {
+            reply.append(piece, length);
+        }
+        reply_tokens++;
+        status = llama_decode(session->context, llama_batch_get_one(&token, 1));
+    }
+    llama_sampler_free(sampler);
+    if (status != 0) {
+        throw_error(env, "Generating failed (llama_decode returned " + std::to_string(status) + ").");
+        return nullptr;
+    }
+
+    jbyteArray reply_bytes = env->NewByteArray((jsize) reply.size());
+    env->SetByteArrayRegion(reply_bytes, 0, (jsize) reply.size(), reinterpret_cast<const jbyte *>(reply.data()));
+    jclass reply_class = env->FindClass("com/wilo/benchmark/NativeReply");
+    jmethodID constructor = env->GetMethodID(reply_class, "<init>", "([BIILjava/lang/String;)V");
+    return env->NewObject(reply_class, constructor, reply_bytes, count, reply_tokens,
+                          env->NewStringUTF(finish_reason));
 }
