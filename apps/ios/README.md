@@ -2,11 +2,22 @@
 
 An iPhone app that tests how small language models run on a real phone. Everything runs on the phone; nothing is sent anywhere.
 
-**Today's goal:** get one model running on an iPhone and generating a reply. The app doesn't produce benchmark results yet.
+**The goal:** run the benchmark for each model on an iPhone, and send the team the results files.
 
 No Apple or iOS experience is needed. Follow the parts in order. Each one ends with what you should see. If you see something else, go to [If something goes wrong](#if-something-goes-wrong).
 
-**Allow about an hour** the first time, plus the Xcode download if it isn't installed yet.
+**Allow about an hour** the first time, plus the Xcode download if it isn't installed yet, and about 10 minutes per model after that.
+
+## Where to find things
+
+| What | Where |
+|---|---|
+| This guide | `apps/ios/README.md` in the repository |
+| Model files, on the Mac | Download them into the repository folder (Part 4) |
+| Model files, on the iPhone | **Finder → your iPhone → Files → WiloBench** |
+| Results files, on the iPhone | **Finder → your iPhone → Files → WiloBench → results** (appears after the first benchmark) |
+| What the app is doing | The **Status** section in the app |
+| Where to send results | To the team (Part 9) |
 
 ## Before you start
 
@@ -104,7 +115,9 @@ Close other apps on the iPhone first, to leave as much memory as possible.
 
 **If the app suddenly closes,** iOS probably stopped it for using too much memory. Write that down: it's a useful result, not a failure on your part.
 
-## Part 6: Generate a reply (about 1 minute)
+## Part 6: Try one prompt (about 1 minute)
+
+A quick check that the model works, before the full benchmark.
 
 1. Under **Try a prompt**, tap `manipulation`.
 2. Wait. **Status** says `Generating a reply to manipulation...` while it works.
@@ -115,21 +128,56 @@ Close other apps on the iPhone first, to leave as much memory as possible.
 - **Status** showing the token counts, like `449 prompt tokens, 90 reply tokens in ... s (stop)`.
 - **No** warning about expected prompt tokens.
 
-**If you got this far, the main goal is reached:** a language model is running on the iPhone.
+**If you got this far, a language model is running on the iPhone.**
 
-## Part 7: Write down what happened
+## Part 7: Run the benchmark (about 5–10 minutes per model)
 
-Please send the team this, for each model you tried:
+This is the main step. The app runs the 5 benchmark prompts 4 times (20 runs), reloading the model before each round, and saves the results.
 
-| What | Example |
-|---|---|
-| iPhone model and iOS version | iPhone 13 Pro Max, iOS 18.1 |
-| Model | Qwen 3.5 2B |
-| Did it load? How long did it take? | Yes, 4.2 s |
-| Did it generate? Status line | `449 prompt tokens, 90 reply tokens in 12.3 s (stop)` |
-| Any warning, error or sudden close? | None |
+1. Load the model if it isn't loaded (Part 5).
+2. Under **Benchmark**, tap **Run benchmark (20 runs)**.
+3. Leave the phone alone with the app open. The screen stays on by itself. Don't switch apps.
 
-**If you have time,** try the other models. Their file names and download locations are in [`models/registry.yaml`](../../models/registry.yaml). In order of size: Llama 3.2 3B (2.02 GB), Qwen 3.5 4B (2.74 GB) and Gemma 4 E2B (3.11 GB). A model that crashes the app is just as useful to know about as one that works.
+**While it runs, you should see** `Running the benchmark. Keep the app open; this takes a few minutes.` and a counter like `Run 7 of 20 done.`
+
+**When it's finished, you should see** a summary in **Status**, for example:
+
+```
+Benchmark finished: 20/20 runs. Load 3.2 s, first token 2400 ms, reply 9.2 tokens/s, peak memory 1.70 GB.
+Saved as results/qwen3.5-2b-metal-20261108T140000Z.json.
+```
+
+**If the app suddenly closes during the benchmark,** iOS probably stopped it for using too much memory. That's a useful result, and it's already saved. Open the app again: it shows *The last benchmark (...) stopped after ... runs*. Then go on to Part 8 as usual.
+
+Repeat this part for each model you have. Load the next model first (Part 5). Each model gets its own results file.
+
+## Part 8: Get the results files (about 2 minutes)
+
+1. Connect the iPhone to the Mac with the cable.
+2. Open **Finder** and click your iPhone in the sidebar.
+3. Open the **Files** tab and expand **WiloBench**.
+4. Drag the **results** folder to the Mac, for example onto the desktop.
+
+**You should see** one file per benchmark, named like `qwen3.5-2b-metal-20261108T140000Z.json`: the model, the backend and the time (in UTC).
+
+## Part 9: Send the results
+
+Send the team the results files, for example in a zip or through the team's shared folder. That's all that's needed: each file records the phone, the model, the settings and every measurement.
+
+Please also mention anything unusual, such as the phone getting hot, or the app closing.
+
+**If you have time,** try the other models (Parts 4–7). Their file names and download locations are in [`models/registry.yaml`](../../models/registry.yaml). In order of size: Llama 3.2 3B (2.02 GB), Qwen 3.5 4B (2.74 GB) and Gemma 4 E2B (3.11 GB). A model that crashes the app is just as useful to know about as one that works.
+
+**For whoever collects the results:** put all files in one folder on a computer with this repository set up, then, from the repository folder:
+
+```bash
+uv run eval/validate_results.py path/to/folder/*.json
+```
+```bash
+uv run eval/summarize_results.py path/to/folder
+```
+
+The first checks the files; the second prints the results table, with phone and laptop runs side by side.
 
 ## If something goes wrong
 
@@ -147,9 +195,12 @@ Please send the team this, for each model you tried:
 | Part 4 | No **Files** tab or no **WiloBench** in Finder | The app must be installed first (Part 3). Then reconnect the iPhone |
 | Part 5 | The model isn't in the list | Pull down on the list to refresh it, and check that the file name ends in `.gguf` |
 | Part 5 | `Could not load ...` | The file may be incomplete, or the app may need a newer llama.cpp. Check the checksum, copy it again, and send the team the message |
-| Part 5 or 6 | The app suddenly closes | Write it down (Part 7). Close other apps and try once more |
+| Part 5, 6 or 7 | The app suddenly closes | Most likely iOS stopped it for using too much memory: a useful result. Note it when you send the results (Part 9). Close other apps and try once more |
 | Part 6 | A warning about expected prompt tokens | Send the team the full status line |
-| Part 6 | Very slow, or no reply after 5 minutes | Write it down (Part 7), including roughly how long you waited |
+| Part 6 | Very slow, or no reply after 5 minutes | Note it for the team (Part 9), including roughly how long you waited |
+| Part 7 | `Stopped: ...` in the summary | The benchmark failed partway; the message says why, and it's saved in the results file. Send it anyway |
+| Part 7 | The screen locked or you switched apps during the benchmark | Run it again for that model; the interrupted file can be deleted |
+| Part 8 | No **results** folder in Finder | It appears after the first benchmark finishes or stops. Reconnect the iPhone |
 | Later | The app stops opening after 7 days | Normal with a free Apple ID: press **Run** in Xcode again |
 
 These steps were written without access to a Mac, so a menu name may differ slightly. If a step is wrong, tell the team so it can be corrected here.
