@@ -23,4 +23,13 @@ object LlamaNative {
 }
 
 /** Built by the native code; LoadedModel turns it into a Reply. */
-class NativeReply(val text: ByteArray, val promptTokens: Int, val replyTokens: Int, val finishReason: String)
+class NativeReply(
+    val text: ByteArray,
+    val promptTokens: Int,
+    val replyTokens: Int,
+    val finishReason: String,
+    val timeToFirstTokenMs: Double,
+    val promptMs: Double,
+    val replyMs: Double,
+    val totalMs: Double,
+)

@@ -2,11 +2,22 @@
 
 An Android app that tests how small language models run on a real phone, the counterpart of the [iOS app](../ios/). Everything runs on the phone; nothing is sent anywhere.
 
-**Today's goal:** get one model running on an Android phone and generating a reply. The app doesn't produce benchmark results yet.
+**The goal:** run the benchmark for each model on an Android phone, and send the team the results files.
 
 No Android experience is needed. Follow the parts in order. Each one ends with what you should see. If you see something else, go to [If something goes wrong](#if-something-goes-wrong).
 
-**Allow about an hour** the first time, plus the Android Studio download if it isn't installed yet.
+**Allow about an hour** the first time, plus the Android Studio download if it isn't installed yet, and about 10 minutes per model after that.
+
+## Where to find things
+
+| What | Where |
+|---|---|
+| This guide | `apps/android/README.md` in the repository |
+| Model files, on the computer | Download them into the repository folder (Part 5) |
+| Model files, on the phone | `/sdcard/Android/data/com.wilo.benchmark/files/`, also shown in the app when no model is there |
+| Results files, on the phone | `/sdcard/Android/data/com.wilo.benchmark/files/results/` (appears after the first benchmark) |
+| What the app is doing | The **Status** section in the app |
+| Where to send results | To the team (Part 10) |
 
 ## Before you start
 
@@ -120,7 +131,9 @@ Close other apps on the phone first, to leave as much memory as possible.
 
 **If the app suddenly closes,** Android probably stopped it for using too much memory. Write that down: it's a useful result, not a failure on your part.
 
-## Part 7: Generate a reply (about 1 minute)
+## Part 7: Try one prompt (about 1 minute)
+
+A quick check that the model works, before the full benchmark.
 
 1. Under **Try a prompt**, tap `manipulation`.
 2. Wait. **Status** says `Generating a reply to manipulation...` while it works. On the emulator, this can take a few minutes.
@@ -131,21 +144,61 @@ Close other apps on the phone first, to leave as much memory as possible.
 - **Status** showing the token counts, like `449 prompt tokens, 90 reply tokens in ... s (stop).`
 - **No** warning about expected prompt tokens.
 
-**If you got this far, the main goal is reached:** a language model is running on the device.
+**If you got this far, a language model is running on the device.**
 
-## Part 8: Write down what happened
+## Part 8: Run the benchmark (about 5–10 minutes per model)
 
-Please send the team this, for each model you tried:
+This is the main step. The app runs the 5 benchmark prompts 4 times (20 runs), reloading the model before each round, and saves the results.
 
-| What | Example |
-|---|---|
-| Phone model and Android version, or "emulator" | Pixel 6a, Android 15 |
-| Model | Qwen 3.5 2B |
-| Did it load? How long did it take? | Yes, 4.2 s |
-| Did it generate? Status line | `449 prompt tokens, 90 reply tokens in 12.3 s (stop).` |
-| Any warning, error or sudden close? | None |
+1. Load the model if it isn't loaded (Part 6).
+2. Under **Benchmark**, tap **Run benchmark (20 runs)**.
+3. Leave the phone alone with the app open. The screen stays on by itself. On the emulator this takes much longer, and its numbers don't count as phone results. Don't switch apps.
 
-**If you have time,** try the other models. Their file names and download locations are in [`models/registry.yaml`](../../models/registry.yaml). In order of size: Llama 3.2 3B (2.02 GB), Qwen 3.5 4B (2.74 GB) and Gemma 4 E2B (3.11 GB). A model that crashes the app is just as useful to know about as one that works.
+**While it runs, you should see** `Running the benchmark. Keep the app open; this takes a few minutes.` and a counter like `Run 7 of 20 done.`
+
+**When it's finished, you should see** a summary in **Status**, for example:
+
+```
+Benchmark finished: 20/20 runs. Load 3.1 s, first token 2400 ms, reply 9.2 tokens/s, peak memory 1.60 GB.
+Saved as /storage/emulated/0/Android/data/com.wilo.benchmark/files/results/qwen3.5-2b-cpu-20261108T140000Z.json
+```
+
+**If the app suddenly closes during the benchmark,** Android probably stopped it for using too much memory. That's a useful result, and it's already saved. Open the app again: it shows *The last benchmark (...) stopped after ... runs*. Then go on to Part 9 as usual.
+
+Repeat this part for each model you have. Load the next model first (Part 6). Each model gets its own results file.
+
+## Part 9: Get the results files (about 2 minutes)
+
+With the phone connected, from the repository folder:
+
+```bash
+adb pull /sdcard/Android/data/com.wilo.benchmark/files/results/
+```
+
+This copies the phone's **results** folder into the current folder on the computer.
+
+**Or, in Android Studio:** **View → Tool Windows → Device Explorer**, open `sdcard/Android/data/com.wilo.benchmark/files/`, right-click **results** and choose **Save As**.
+
+**You should see** one file per benchmark, named like `qwen3.5-2b-cpu-20261108T140000Z.json`: the model, the backend and the time (in UTC).
+
+## Part 10: Send the results
+
+Send the team the results files, for example in a zip or through the team's shared folder. That's all that's needed: each file records the phone, the model, the settings and every measurement.
+
+Please also mention anything unusual, such as the phone getting hot, or the app closing.
+
+**If you have time,** try the other models (Parts 5–8). Their file names and download locations are in [`models/registry.yaml`](../../models/registry.yaml). In order of size: Llama 3.2 3B (2.02 GB), Qwen 3.5 4B (2.74 GB) and Gemma 4 E2B (3.11 GB). A model that crashes the app is just as useful to know about as one that works.
+
+**For whoever collects the results:** put all files in one folder on a computer with this repository set up, then, from the repository folder:
+
+```bash
+uv run eval/validate_results.py path/to/folder/*.json
+```
+```bash
+uv run eval/summarize_results.py path/to/folder
+```
+
+The first checks the files; the second prints the results table, with phone and laptop runs side by side.
 
 ## If something goes wrong
 
@@ -163,9 +216,12 @@ Please send the team this, for each model you tried:
 | Part 5 | The emulator runs out of space | Give it more internal storage (Part 3, emulator step 3) |
 | Part 6 | The model isn't in the list | Tap **Refresh list**, and check the `adb push` finished |
 | Part 6 | `Could not load ...` | The file may be incomplete, or the app may need a newer llama.cpp. Check the checksum, push it again, and send the team the message |
-| Part 6 or 7 | The app suddenly closes | Write it down (Part 8). Close other apps and try once more |
+| Part 6, 7 or 8 | The app suddenly closes | Most likely Android stopped it for using too much memory: a useful result. Note it when you send the results (Part 10). Close other apps and try once more |
 | Part 7 | A warning about expected prompt tokens | Send the team the full status line |
-| Part 7 | Very slow, or no reply after 5 minutes | On the emulator this is normal. On a phone, write it down (Part 8), including roughly how long you waited |
+| Part 7 | Very slow, or no reply after 5 minutes | On the emulator this is normal. On a phone, note it for the team (Part 10), including roughly how long you waited |
+| Part 8 | `Stopped: ...` in the summary | The benchmark failed partway; the message says why, and it's saved in the results file. Send it anyway |
+| Part 8 | You switched apps during the benchmark | Run it again for that model; the interrupted file can be deleted |
+| Part 9 | `adb pull` says the folder doesn't exist | It appears after the first benchmark finishes or stops |
 
 These steps were written without testing on every phone, and menu names differ between Android brands. If a step is wrong, tell the team so it can be corrected here.
 

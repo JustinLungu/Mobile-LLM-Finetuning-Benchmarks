@@ -2,6 +2,7 @@ package com.wilo.benchmark
 
 import android.app.Activity
 import android.os.Bundle
+import android.view.WindowManager
 import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.ScrollView
@@ -15,11 +16,17 @@ class MainActivity : Activity() {
     private val worker = Executors.newSingleThreadExecutor()
     private var loaded: LoadedModel? = null
     private var loadedModelKey: String? = null
+    private var loadedFile: File? = null
+    /** True while a benchmark runs; other buttons are ignored meanwhile. */
+    @Volatile private var benchmarkRunning = false
     private lateinit var prompts: RenderedPrompts
+    private lateinit var probe: DeviceProbe
+    private var memory: MemoryPeak? = null
 
     private lateinit var modelList: LinearLayout
     private lateinit var promptList: LinearLayout
     private lateinit var status: TextView
+    private lateinit var deviceStatus: TextView
     private lateinit var reply: TextView
 
     /** Where model files go: Android/data/com.wilo.benchmark/files/ on the phone. */
@@ -29,6 +36,7 @@ class MainActivity : Activity() {
         super.onCreate(savedInstanceState)
         LlamaNative.init(applicationInfo.nativeLibraryDir)
         prompts = RenderedPrompts.load(this)
+        probe = DeviceProbe(this)
 
         val content = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -47,6 +55,8 @@ class MainActivity : Activity() {
         content.addView(heading("Status"))
         status = TextView(this).apply { text = "No model loaded." }
         content.addView(status)
+        deviceStatus = TextView(this).apply { textSize = 12f }
+        content.addView(deviceStatus)
         reply = TextView(this).apply { textSize = 12f; typeface = android.graphics.Typeface.MONOSPACE }
         content.addView(reply)
         content.addView(heading("llama.cpp on this phone"))
@@ -54,6 +64,7 @@ class MainActivity : Activity() {
 
         setContentView(ScrollView(this).apply { addView(content) })
         refreshModelList()
+        BenchmarkRun.recoverInterruptedRun(this)?.let { status.text = it }
     }
 
     override fun onDestroy() {
@@ -85,10 +96,23 @@ class MainActivity : Activity() {
         }
     }
 
+    /** Read memory and temperature (on the worker thread), and return the line to show. */
+    private fun readDevice(): String {
+        val memory = memory ?: return ""
+        memory.sample()
+        return "${memory.summary} Temperature: ${probe.thermalState()}."
+    }
+
     /** One button per benchmark prompt, once a benchmark model has loaded. */
     private fun showPrompts() {
         promptList.removeAllViews()
         if (loadedModelKey == null) return
+        promptList.addView(heading("Benchmark"))
+        promptList.addView(Button(this).apply {
+            text = "Run benchmark (20 runs)"
+            isAllCaps = false
+            setOnClickListener { runBenchmark() }
+        })
         promptList.addView(heading("Try a prompt"))
         for (promptId in prompts.promptIds) {
             promptList.addView(Button(this).apply {
@@ -99,20 +123,56 @@ class MainActivity : Activity() {
         }
     }
 
+    /** The full benchmark for the loaded model: 20 runs, saved to the results folder. */
+    private fun runBenchmark() {
+        val file = loadedFile ?: return
+        val key = loadedModelKey ?: return
+        if (benchmarkRunning) return
+        benchmarkRunning = true
+        // A screen that turns off can pause the app, which would stop the benchmark.
+        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        status.text = "Running the benchmark. Keep the app open; this takes a few minutes."
+        deviceStatus.text = "Starting..."
+        reply.text = ""
+        // The benchmark loads the model itself, so the prompt buttons go away.
+        loadedModelKey = null
+        loadedFile = null
+        showPrompts()
+
+        worker.execute {
+            // Free this copy first; the benchmark loads its own.
+            loaded?.close()
+            loaded = null
+            val benchmark = BenchmarkRun(this, file, key, prompts)
+            benchmark.run { done, total ->
+                runOnUiThread { deviceStatus.text = "Run $done of $total done." }
+            }
+            runOnUiThread {
+                status.text = "Benchmark finished: ${benchmark.summary}\n" +
+                    "Saved as ${benchmark.resultsFile.path}"
+                deviceStatus.text = ""
+                window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                benchmarkRunning = false
+            }
+        }
+    }
+
     private fun runPrompt(promptId: String) {
+        if (benchmarkRunning) return
         val key = loadedModelKey ?: return
         val prompt = prompts.prompt(key, promptId)
         status.text = "Generating a reply to $promptId..."
         reply.text = ""
         worker.execute {
             val model = loaded
-            val started = System.nanoTime()
             val (message, text) = try {
                 val result = model!!.generate(prompt.text, prompts.maxTokens)
-                val seconds = (System.nanoTime() - started) / 1e9
+                val t = result.timing
                 var line = String.format(
-                    Locale.US, "%d prompt tokens, %d reply tokens in %.1f s (%s).",
-                    result.promptTokens, result.replyTokens, seconds, result.finishReason,
+                    Locale.US, "%d prompt tokens, %d reply tokens in %.1f s (%s).\n" +
+                        "First token after %.0f ms. Prompt %.1f tokens/s, reply %.1f tokens/s.",
+                    result.promptTokens, result.replyTokens, t.totalMs / 1000, result.finishReason,
+                    t.timeToFirstTokenMs, t.promptTokensPerSecond, t.replyTokensPerSecond,
                 )
                 // A different count means the phone isn't seeing what the laptop saw.
                 if (result.promptTokens != prompt.tokens) {
@@ -122,15 +182,19 @@ class MainActivity : Activity() {
             } catch (e: IllegalStateException) {
                 (e.message ?: "Generating failed.") to ""
             }
+            val device = readDevice()
             runOnUiThread {
                 status.text = message
+                deviceStatus.text = device
                 reply.text = text
             }
         }
     }
 
     private fun load(file: File) {
+        if (benchmarkRunning) return
         status.text = "Loading ${file.name}..."
+        deviceStatus.text = ""
         reply.text = ""
         loadedModelKey = null
         showPrompts()
@@ -138,6 +202,8 @@ class MainActivity : Activity() {
             // Free the previous model first, so two are never in memory at once.
             loaded?.close()
             loaded = null
+            // Each model gets its own peak.
+            memory = MemoryPeak(probe)
             val started = System.nanoTime()
             var key: String? = null
             val message = try {
@@ -149,9 +215,12 @@ class MainActivity : Activity() {
             } catch (e: IllegalStateException) {
                 e.message ?: "Loading failed."
             }
+            val device = if (loaded != null) readDevice() else ""
             runOnUiThread {
                 status.text = message
+                deviceStatus.text = device
                 loadedModelKey = key
+                loadedFile = if (loaded != null) file else null
                 showPrompts()
             }
         }

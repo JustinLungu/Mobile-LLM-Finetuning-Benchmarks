@@ -3,6 +3,7 @@
 
 #include <jni.h>
 
+#include <chrono>
 #include <string>
 #include <vector>
 
@@ -16,6 +17,12 @@ struct Session {
     llama_model *model;
     llama_context *context;
 };
+
+// Milliseconds on a clock that only moves forward, for measuring durations.
+double now_ms() {
+    using namespace std::chrono;
+    return duration<double, std::milli>(steady_clock::now().time_since_epoch()).count();
+}
 
 void throw_error(JNIEnv *env, const std::string &message) {
     env->ThrowNew(env->FindClass("java/lang/IllegalStateException"), message.c_str());
@@ -77,6 +84,7 @@ Java_com_wilo_benchmark_LlamaNative_freeModel(JNIEnv *, jobject, jlong handle) {
 // modified UTF-8 that can't hold every character.
 extern "C" JNIEXPORT jobject JNICALL
 Java_com_wilo_benchmark_LlamaNative_generate(JNIEnv *env, jobject, jlong handle, jstring prompt_text, jint max_tokens) {
+    const double started = now_ms();
     auto *session = reinterpret_cast<Session *>(handle);
     const llama_vocab *vocab = llama_model_get_vocab(session->model);
 
@@ -100,11 +108,19 @@ Java_com_wilo_benchmark_LlamaNative_generate(JNIEnv *env, jobject, jlong handle,
     llama_sampler_chain_add(sampler, llama_sampler_init_greedy());
 
     int status = llama_decode(session->context, llama_batch_get_one(tokens.data(), (int32_t) tokens.size()));
+    // Make sure the work is finished before reading the clock (as on iOS).
+    llama_synchronize(session->context);
+    const double prompt_done = now_ms();
+
+    double first_token_at = -1;
     std::string reply;
     int reply_tokens = 0;
     const char *finish_reason = "length";
     while (status == 0 && reply_tokens < max_tokens) {
         llama_token token = llama_sampler_sample(sampler, session->context, -1);
+        if (first_token_at < 0) {
+            first_token_at = now_ms();
+        }
         if (llama_vocab_is_eog(vocab, token)) {
             finish_reason = "stop";
             break;
@@ -118,6 +134,11 @@ Java_com_wilo_benchmark_LlamaNative_generate(JNIEnv *env, jobject, jlong handle,
         status = llama_decode(session->context, llama_batch_get_one(&token, 1));
     }
     llama_sampler_free(sampler);
+    llama_synchronize(session->context);
+    const double finished = now_ms();
+    if (first_token_at < 0) {
+        first_token_at = finished;
+    }
     if (status != 0) {
         throw_error(env, "Generating failed (llama_decode returned " + std::to_string(status) + ").");
         return nullptr;
@@ -126,7 +147,9 @@ Java_com_wilo_benchmark_LlamaNative_generate(JNIEnv *env, jobject, jlong handle,
     jbyteArray reply_bytes = env->NewByteArray((jsize) reply.size());
     env->SetByteArrayRegion(reply_bytes, 0, (jsize) reply.size(), reinterpret_cast<const jbyte *>(reply.data()));
     jclass reply_class = env->FindClass("com/wilo/benchmark/NativeReply");
-    jmethodID constructor = env->GetMethodID(reply_class, "<init>", "([BIILjava/lang/String;)V");
+    jmethodID constructor = env->GetMethodID(reply_class, "<init>", "([BIILjava/lang/String;DDDD)V");
     return env->NewObject(reply_class, constructor, reply_bytes, count, reply_tokens,
-                          env->NewStringUTF(finish_reason));
+                          env->NewStringUTF(finish_reason),
+                          first_token_at - started, prompt_done - started,
+                          finished - prompt_done, finished - started);
 }
