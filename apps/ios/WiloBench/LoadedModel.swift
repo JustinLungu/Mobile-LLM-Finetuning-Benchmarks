@@ -53,6 +53,9 @@ final class LoadedModel: @unchecked Sendable {
     /// The same context size as the laptop benchmarks (see eval/llama_server.py).
     static let contextSize: UInt32 = 4096
 
+    /// Mostly unused, since the GPU does the work. Stays clear of the slow cores.
+    static let threads = max(1, min(4, ProcessInfo.processInfo.processorCount - 2))
+
     private static let backend: Void = llama_backend_init()
 
     let model: OpaquePointer
@@ -70,10 +73,8 @@ final class LoadedModel: @unchecked Sendable {
 
         var contextParams = llama_context_default_params()
         contextParams.n_ctx = Self.contextSize
-        // Mostly unused, since the GPU does the work. Stays clear of the slow cores.
-        let threads = Int32(max(1, min(4, ProcessInfo.processInfo.processorCount - 2)))
-        contextParams.n_threads = threads
-        contextParams.n_threads_batch = threads
+        contextParams.n_threads = Int32(Self.threads)
+        contextParams.n_threads_batch = Int32(Self.threads)
         guard let context = llama_init_from_model(model, contextParams) else {
             llama_model_free(model)
             throw LlamaError.contextFailed(file)
