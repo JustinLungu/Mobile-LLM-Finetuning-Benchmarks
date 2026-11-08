@@ -2,6 +2,7 @@ package com.wilo.benchmark
 
 import android.app.Activity
 import android.os.Bundle
+import android.view.WindowManager
 import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.ScrollView
@@ -15,6 +16,9 @@ class MainActivity : Activity() {
     private val worker = Executors.newSingleThreadExecutor()
     private var loaded: LoadedModel? = null
     private var loadedModelKey: String? = null
+    private var loadedFile: File? = null
+    /** True while a benchmark runs; other buttons are ignored meanwhile. */
+    @Volatile private var benchmarkRunning = false
     private lateinit var prompts: RenderedPrompts
     private lateinit var probe: DeviceProbe
     private var memory: MemoryPeak? = null
@@ -60,6 +64,7 @@ class MainActivity : Activity() {
 
         setContentView(ScrollView(this).apply { addView(content) })
         refreshModelList()
+        BenchmarkRun.recoverInterruptedRun(this)?.let { status.text = it }
     }
 
     override fun onDestroy() {
@@ -102,6 +107,12 @@ class MainActivity : Activity() {
     private fun showPrompts() {
         promptList.removeAllViews()
         if (loadedModelKey == null) return
+        promptList.addView(heading("Benchmark"))
+        promptList.addView(Button(this).apply {
+            text = "Run benchmark (20 runs)"
+            isAllCaps = false
+            setOnClickListener { runBenchmark() }
+        })
         promptList.addView(heading("Try a prompt"))
         for (promptId in prompts.promptIds) {
             promptList.addView(Button(this).apply {
@@ -112,7 +123,42 @@ class MainActivity : Activity() {
         }
     }
 
+    /** The full benchmark for the loaded model: 20 runs, saved to the results folder. */
+    private fun runBenchmark() {
+        val file = loadedFile ?: return
+        val key = loadedModelKey ?: return
+        if (benchmarkRunning) return
+        benchmarkRunning = true
+        // A screen that turns off can pause the app, which would stop the benchmark.
+        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        status.text = "Running the benchmark. Keep the app open; this takes a few minutes."
+        deviceStatus.text = "Starting..."
+        reply.text = ""
+        // The benchmark loads the model itself, so the prompt buttons go away.
+        loadedModelKey = null
+        loadedFile = null
+        showPrompts()
+
+        worker.execute {
+            // Free this copy first; the benchmark loads its own.
+            loaded?.close()
+            loaded = null
+            val benchmark = BenchmarkRun(this, file, key, prompts)
+            benchmark.run { done, total ->
+                runOnUiThread { deviceStatus.text = "Run $done of $total done." }
+            }
+            runOnUiThread {
+                status.text = "Benchmark finished: ${benchmark.summary}\n" +
+                    "Saved as ${benchmark.resultsFile.path}"
+                deviceStatus.text = ""
+                window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                benchmarkRunning = false
+            }
+        }
+    }
+
     private fun runPrompt(promptId: String) {
+        if (benchmarkRunning) return
         val key = loadedModelKey ?: return
         val prompt = prompts.prompt(key, promptId)
         status.text = "Generating a reply to $promptId..."
@@ -146,6 +192,7 @@ class MainActivity : Activity() {
     }
 
     private fun load(file: File) {
+        if (benchmarkRunning) return
         status.text = "Loading ${file.name}..."
         deviceStatus.text = ""
         reply.text = ""
@@ -173,6 +220,7 @@ class MainActivity : Activity() {
                 status.text = message
                 deviceStatus.text = device
                 loadedModelKey = key
+                loadedFile = if (loaded != null) file else null
                 showPrompts()
             }
         }
