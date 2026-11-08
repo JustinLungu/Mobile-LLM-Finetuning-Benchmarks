@@ -11,4 +11,10 @@ object LlamaNative {
 
     /** What llama.cpp detects on this phone, such as the CPU features it uses. */
     external fun systemInfo(): String
+
+    /** Load a model and create its context. Returns a handle; throws IllegalStateException on failure. */
+    external fun loadModel(path: String, contextSize: Int, threads: Int): Long
+
+    /** Free a model loaded with loadModel. */
+    external fun freeModel(handle: Long)
 }

@@ -11,3 +11,11 @@ eval/fetch_llama_cpp.sh
 ```
 
 Then open this `apps/android` folder in Android Studio. The first build compiles llama.cpp and takes several minutes.
+
+To try a model, copy its `.gguf` file into the app's folder on the phone or emulator. With the device connected and USB debugging on:
+
+```bash
+adb push Qwen3.5-2B-Q4_K_M.gguf /sdcard/Android/data/com.wilo.benchmark/files/
+```
+
+Then tap **Refresh list** in the app, and tap the model.
