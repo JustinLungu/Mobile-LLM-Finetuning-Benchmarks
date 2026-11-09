@@ -166,7 +166,7 @@ Send the team the results files, for example in a zip or through the team's shar
 
 Please also mention anything unusual, such as the phone getting hot, or the app closing.
 
-**If you have time,** try the other models (Parts 4–7). Their file names and download locations are in [`models/registry.yaml`](../../models/registry.yaml). In order of size: Llama 3.2 3B (2.02 GB), Qwen 3.5 4B (2.74 GB) and Gemma 4 E2B (3.11 GB). A model that crashes the app is just as useful to know about as one that works.
+**Then do the same for the other three models**, using the commands in [All four models](#all-four-models).
 
 **For whoever collects the results:** put all files in one folder on a computer with this repository set up, then, from the repository folder:
 
@@ -178,6 +178,54 @@ uv run eval/summarize_results.py path/to/folder
 ```
 
 The first checks the files; the second prints the results table, with phone and laptop runs side by side.
+
+## All four models
+
+**All four models, smallest first.** Benchmark them in this order: the biggest are the most likely to crash, so the smaller ones' results are safe first.
+
+| # | Model | File | Size | Checksum starts / ends with |
+|---|---|---|---|---|
+| 1 | Qwen 3.5 2B | `Qwen3.5-2B-Q4_K_M.gguf` | 1.28 GB | `aaf42c8b` … `14699223` |
+| 2 | Llama 3.2 3B Instruct | `Llama-3.2-3B-Instruct-Q4_K_M.gguf` | 2.02 GB | `6c99cc00` … `bd87f74d` |
+| 3 | Qwen 3.5 4B | `Qwen3.5-4B-Q4_K_M.gguf` | 2.74 GB | `00fe7986` … `69ef11a4` |
+| 4 | Gemma 4 E2B Instruct | `gemma-4-E2B-it-Q4_K_M.gguf` | 3.11 GB | `740185b2` … `e4ec34b8` |
+
+Download commands, one per model:
+
+Qwen 3.5 2B:
+
+```bash
+curl -L -o Qwen3.5-2B-Q4_K_M.gguf https://huggingface.co/unsloth/Qwen3.5-2B-GGUF/resolve/f6d5376be1edb4d416d56da11e5397a961aca8ae/Qwen3.5-2B-Q4_K_M.gguf
+```
+
+Llama 3.2 3B Instruct:
+
+```bash
+curl -L -o Llama-3.2-3B-Instruct-Q4_K_M.gguf https://huggingface.co/unsloth/Llama-3.2-3B-Instruct-GGUF/resolve/e7d0997e49c9cb00d88b4c1a6a16aa894b0bbc31/Llama-3.2-3B-Instruct-Q4_K_M.gguf
+```
+
+Qwen 3.5 4B:
+
+```bash
+curl -L -o Qwen3.5-4B-Q4_K_M.gguf https://huggingface.co/unsloth/Qwen3.5-4B-GGUF/resolve/e87f176479d0855a907a41277aca2f8ee7a09523/Qwen3.5-4B-Q4_K_M.gguf
+```
+
+Gemma 4 E2B Instruct:
+
+```bash
+curl -L -o gemma-4-E2B-it-Q4_K_M.gguf https://huggingface.co/unsloth/gemma-4-E2B-it-GGUF/resolve/0314792d7f1f7e229411f620751375812bb9faf2/gemma-4-E2B-it-Q4_K_M.gguf
+```
+
+Check each download, replacing the file name:
+
+```bash
+shasum -a 256 Qwen3.5-2B-Q4_K_M.gguf
+```
+
+The checksum must start and end as in the table. Otherwise, download it again.
+
+**Phone storage:** all four together are about 9.2 GB. Either keep 10 GB free on the phone, or delete each model after its benchmark.
+To delete a model: In Finder → your iPhone → Files → WiloBench, select the model file and press Delete.
 
 ## If something goes wrong
 
