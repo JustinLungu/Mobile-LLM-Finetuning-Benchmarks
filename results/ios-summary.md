@@ -4,3 +4,8 @@
 | llama3.2-3b | iPhone19,2 (iPhone 18 Pro) | metal | yes (20/20) | 0.2 s | 437 ms | 48.7 tokens/s | 0.62 GB | – | 2.02 GB |
 | qwen3.5-4b | iPhone19,2 (iPhone 18 Pro) | metal | yes (20/20) | 0.2 s | 735 ms | 27.6 tokens/s | 0.35 GB | – | 2.74 GB |
 | gemma4-e2b | iPhone19,2 (iPhone 18 Pro) | metal | yes (20/20) | 0.2 s | 311 ms | 61.0 tokens/s | 0.27 GB | – | 3.11 GB |
+
+
+
+
+**iPhone IDs:** results show Apple's internal ID, not the name (e.g. `iPhone19,2` = iPhone 18 Pro, `iPhone19,3` = iPhone 18 Pro Max, `iPhone18,1` = iPhone 17 Pro). Always add the name next to it.
