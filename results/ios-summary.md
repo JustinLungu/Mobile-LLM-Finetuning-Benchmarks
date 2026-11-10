@@ -8,4 +8,4 @@
 
 
 
-**iPhone IDs:** results show Apple's internal ID, not the name (e.g. `iPhone19,2` = iPhone 18 Pro, `iPhone19,3` = iPhone 18 Pro Max, `iPhone18,1` = iPhone 17 Pro). Always add the name next to it.
+**iPhone IDs:** results show Apple's internal ID, not the name (e.g. `iPhone19,2` = iPhone 18 Pro, `iPhone19,3` = iPhone 18 Pro Max, `iPhone18,1` = iPhone 17 Pro).
