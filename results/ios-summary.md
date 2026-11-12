@@ -4,6 +4,10 @@
 | llama3.2-3b | iPhone19,2<br>(iPhone 18 Pro) | metal | yes (20/20) | 0.2 s | 437 ms | 48.7 tokens/s | 0.62 GB | – | 2.02 GB |
 | qwen3.5-4b | iPhone19,2<br>(iPhone 18 Pro) | metal | yes (20/20) | 0.2 s | 735 ms | 27.6 tokens/s | 0.35 GB | – | 2.74 GB |
 | gemma4-e2b | iPhone19,2<br>(iPhone 18 Pro) | metal | yes (20/20) | 0.2 s | 311 ms | 61.0 tokens/s | 0.27 GB | – | 3.11 GB |
+| qwen3.5-2b | iPhone15,5<br>(iPhone 15 Plus) | metal | yes (20/20) | 0.3 s | 1719 ms | 23.2 tokens/s | 0.22 GB | – | 1.28 GB |
+| llama3.2-3b | iPhone15,5<br>(iPhone 15 Plus) | metal | yes (20/20) | 0.3 s | 3006 ms | 17.1 tokens/s | 0.62 GB | – | 2.02 GB |
+| qwen3.5-4b | iPhone15,5<br>(iPhone 15 Plus) | metal | no (15/20) | 0.7 s | 5252 ms | 7.2 tokens/s | 0.37 GB | – | 2.74 GB |
+| gemma4-e2b | iPhone15,5<br>(iPhone 15 Plus) | metal | yes (20/20) | 1.4 s | 2224 ms | 19.4 tokens/s | 0.28 GB | – | 3.11 GB |
 
 
 
