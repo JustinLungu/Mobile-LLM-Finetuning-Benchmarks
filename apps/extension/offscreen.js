@@ -113,44 +113,80 @@ function status(fields) {
   chrome.runtime.sendMessage({ from: "offscreen", type: "model-status", ...fields }).catch(() => {});
 }
 
+// Chrome can expose WebGPU (navigator.gpu) and still refuse to hand out a GPU,
+// e.g. after a graphics driver hiccup, until Chrome restarts. wllama then
+// fails without returning, so check for a real GPU ourselves first.
+async function gpuAvailable() {
+  try {
+    return !!(navigator.gpu && (await navigator.gpu.requestAdapter()));
+  } catch {
+    return false;
+  }
+}
+
+const withTimeout = (promise, ms, what) =>
+  Promise.race([promise, new Promise((_, reject) => setTimeout(() => reject(new Error(`${what} took over ${ms / 1000} s`)), ms))]);
+
+// Load the model and process Wilo's rules once (warm-up), on the GPU when
+// possible. Returns where it runs.
+async function startEngine(file, system, useGpu) {
+  timing.t0 = performance.now();
+  if (wllama) await wllama.exit().catch(() => {});
+  wllama = new Wllama({ default: chrome.runtime.getURL("vendor/wllama.wasm") }, { suppressNativeLog: true });
+  await wllama.loadModel([file], {
+    n_ctx: 4096, // room for a whole session's conversation
+    reasoning: false, // Qwen and Gemma would otherwise "think" first: slower, and not what we trained
+    ...(useGpu ? {} : { n_gpu_layers: 0 }), // 0 = CPU only
+  });
+  timing.loadMs = Math.round(performance.now() - timing.t0);
+  // Process Wilo's rules once now, so the first real reply only has to read
+  // the short situation: llama.cpp reuses the matching start. (Works for
+  // Llama; Qwen 3.5's hybrid layers can only reuse an exact match, so for
+  // Qwen this only warms up the engine.)
+  await wllama.createChatCompletion({
+    messages: [
+      { role: "system", content: system },
+      { role: "user", content: "Hi" },
+    ],
+    max_tokens: 1,
+    temperature: 0,
+  });
+  timing.warmMs = Math.round(performance.now() - timing.t0) - timing.loadMs;
+}
+
+const timing = {};
+
 async function load({ model, system, max_tokens }) {
   maxTokens = max_tokens || maxTokens;
   if (current && current.url === model.url) return;
   if (loading) return loading;
   loading = (async () => {
     try {
-      if (wllama) await wllama.exit();
-      wllama = new Wllama({ default: chrome.runtime.getURL("vendor/wllama.wasm") }, { suppressNativeLog: true });
       status({ state: "downloading", key: model.key, loaded: 0, total: model.sizeBytes || 0 });
       const file = await downloadModel(model, (loaded, total, note) =>
         status({ state: "downloading", key: model.key, loaded, total, note }),
       );
       status({ state: "warming", key: model.key });
-      const t0 = performance.now();
-      await wllama.loadModel([file], {
-        n_ctx: 2048,
-        reasoning: false, // Qwen and Gemma would otherwise "think" first: slower, and not what we trained
-      });
-      const loadMs = performance.now() - t0;
-      // Process Wilo's rules once now, so the first real reply only has to
-      // read the short situation: llama.cpp reuses the matching start. (Works
-      // for Llama; Qwen 3.5's hybrid layers can only reuse an exact match, so
-      // for Qwen this only warms up the engine.)
-      await wllama.createChatCompletion({
-        messages: [
-          { role: "system", content: system },
-          { role: "user", content: "Hi" },
-        ],
-        max_tokens: 1,
-        temperature: 0,
-      });
+      let gpu = await gpuAvailable();
+      let gpuNote = gpu ? "" : "no GPU available";
+      if (gpu) {
+        try {
+          await withTimeout(startEngine(file, system, true), 180000, "loading on the GPU");
+        } catch (e) {
+          gpu = false;
+          gpuNote = `GPU failed (${(e && e.message) || e}), using the CPU`;
+        }
+      }
+      if (!gpu) await startEngine(file, system, false);
       current = { key: model.key, url: model.url };
       status({
         state: "ready",
         key: model.key,
-        loadMs: Math.round(loadMs),
+        loadMs: timing.loadMs,
+        warmMs: timing.warmMs,
         multithread: wllama.isMultithread(),
-        webgpu: !!navigator.gpu,
+        gpu,
+        gpuNote,
       });
     } catch (e) {
       current = null;
@@ -163,15 +199,12 @@ async function load({ model, system, max_tokens }) {
   return loading;
 }
 
-async function generate({ system, user, schema }) {
+async function generate({ messages, schema }) {
   if (loading) await loading;
   if (!current) throw new Error("model not loaded");
   const t0 = performance.now();
   const res = await wllama.createChatCompletion({
-    messages: [
-      { role: "system", content: system },
-      { role: "user", content: user },
-    ],
+    messages,
     max_tokens: maxTokens,
     // Low but not zero: Wilo's wording varies a little between replies, while
     // its decisions stay stable.

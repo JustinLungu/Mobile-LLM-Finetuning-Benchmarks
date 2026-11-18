@@ -107,6 +107,10 @@ function parseReply(raw) {
   return reply;
 }
 
+// Wilo sees the whole conversation of the session, up to this many exchanges
+// back (about 120 tokens each, well within the model's 4096-token window).
+const HISTORY_TURNS = 12;
+
 async function askWilo(site, userSays) {
   const sessions = await getSessions();
   const session = sessions[site];
@@ -114,6 +118,17 @@ async function askWilo(site, userSays) {
   const settings = await getSettings();
   const system = systemPrompt(settings.memoryNote);
   const user = situationText(session, userSays);
+  // Earlier exchanges, in the same format: each user turn is the situation at
+  // that moment plus what they said, each Wilo turn is its JSON reply.
+  // Fallback replies (no model) are left out: Wilo never said them.
+  const history = session.turns
+    .filter((t) => t.raw)
+    .slice(-HISTORY_TURNS)
+    .flatMap((t) => [
+      { role: "user", content: t.situation },
+      { role: "assistant", content: t.raw },
+    ]);
+  const messages = [{ role: "system", content: system }, ...history, { role: "user", content: user }];
 
   const { model } = await chrome.storage.session.get("model");
   let reply, result = null, error = null;
@@ -121,7 +136,7 @@ async function askWilo(site, userSays) {
     error = `model ${model ? model.state : "not started"}`;
     reply = fallbackReply(error);
   } else {
-    result = await chrome.runtime.sendMessage({ target: "offscreen", type: "generate", system, user, schema: REPLY_SCHEMA });
+    result = await chrome.runtime.sendMessage({ target: "offscreen", type: "generate", messages, schema: REPLY_SCHEMA });
     try {
       if (!result || !result.ok) throw new Error(result ? result.error : "no answer from the model page");
       reply = parseReply(result.raw);
@@ -131,22 +146,28 @@ async function askWilo(site, userSays) {
     }
   }
 
-  if (reply.decision === "grant") await extend(site, reply.minutes);
-  if (reply.decision === "decline") await updateSession(site, (s) => s && { ...s, declines: s.declines + 1 });
-
-  await appendLog({
-    kind: "negotiation",
-    site,
-    app: session.app,
+  const turn = {
+    id: crypto.randomUUID(),
+    at: new Date().toISOString(),
+    says: userSays,
     situation: user,
+    raw: error ? null : result.raw,
     reply,
-    raw: result && result.raw,
     error,
     model: result && result.model,
     ms: result && result.ms,
-    timings: result && result.timings,
+  };
+  await updateSession(site, (s) => s && {
+    ...s,
+    turns: [...s.turns, turn],
+    declines: s.declines + (reply.decision === "decline" ? 1 : 0),
   });
-  return { reply, fallback: !!error };
+  await appendLog({ kind: "negotiation", site, app: session.app, ...turn, historyTurns: history.length / 2, timings: result && result.timings });
+  if (reply.decision === "grant") {
+    await extend(site, reply.minutes);
+    await closeConversation(site, "granted", reply.minutes);
+  }
+  return { reply, id: turn.id, fallback: !!error };
 }
 
 async function extend(site, minutes) {
@@ -156,6 +177,33 @@ async function extend(site, minutes) {
     extensions: s.extensions + 1,
     declines: 0,
   });
+}
+
+// One time-up conversation is over: save it whole, with how it ended, as a
+// ready-made example for fine-tuning (testers send us these logs).
+async function closeConversation(site, outcome, minutes = 0) {
+  const sessions = await getSessions();
+  const s = sessions[site];
+  if (!s) return;
+  const turns = s.turns.slice(s.conversationFrom);
+  if (turns.length) {
+    const settings = await getSettings();
+    await appendLog({
+      kind: "conversation",
+      site,
+      app: s.app,
+      intent: s.intent,
+      next: s.next,
+      agreedMin: s.agreedMin,
+      usedMin: Math.round((Date.now() - s.startedAt) / 60000),
+      outcome, // granted, took offer, stayed anyway, done
+      minutes,
+      memoryNote: settings.memoryNote,
+      system: systemPrompt(settings.memoryNote),
+      turns: turns.map(({ id, says, situation, raw, reply, error, model }) => ({ id, says, situation, raw, reply, error, model })),
+    });
+  }
+  await updateSession(site, (x) => x && { ...x, conversationFrom: x.turns.length });
 }
 
 // --- Messages from the content scripts, the popup and the offscreen page ----
@@ -197,6 +245,8 @@ const handlers = {
       extensions: 0,
       declines: 0,
       lastSeen: now,
+      turns: [], // every exchange with Wilo in this session
+      conversationFrom: 0, // where the current time-up conversation starts in turns
     }));
     await appendLog({ kind: "start", site: msg.site, app: session.app, intent: session.intent, minutes, next: session.next });
     return { session };
@@ -210,20 +260,35 @@ const handlers = {
   async accept(msg) {
     const minutes = Math.max(1, Math.min(240, Math.round(Number(msg.minutes) || 0)));
     const session = await extend(msg.site, minutes);
-    await appendLog({ kind: "accepted", site: msg.site, minutes });
+    await closeConversation(msg.site, "took offer", minutes);
     return { session };
   },
 
   async override(msg) {
     const session = await extend(msg.site, OVERRIDE_MINUTES);
-    await appendLog({ kind: "override", site: msg.site, minutes: OVERRIDE_MINUTES });
+    await closeConversation(msg.site, "stayed anyway", OVERRIDE_MINUTES);
     return { session };
   },
 
   async done(msg, sender) {
+    await closeConversation(msg.site, "done");
     await updateSession(msg.site, () => undefined);
     await appendLog({ kind: "done", site: msg.site });
     if (sender.tab) await chrome.tabs.remove(sender.tab.id);
+    return {};
+  },
+
+  // 👍 or 👎 on one of Wilo's replies.
+  async feedback(msg) {
+    await appendLog({ kind: "feedback", site: msg.site, id: String(msg.id), good: !!msg.good });
+    return {};
+  },
+
+  // Popup, for testing: end the time of every open session now.
+  async "time-up-now"() {
+    const sessions = await getSessions();
+    for (const s of Object.values(sessions)) s.endsAt = Math.min(s.endsAt, Date.now());
+    await chrome.storage.session.set({ sessions });
     return {};
   },
 
