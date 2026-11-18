@@ -13,3 +13,7 @@
 
 
 **iPhone IDs:** results show Apple's internal ID, not the name (e.g. `iPhone19,2` = iPhone 18 Pro, `iPhone19,3` = iPhone 18 Pro Max, `iPhone18,1` = iPhone 17 Pro). [Check Full list here](https://everymac.com/devices/by-identifier/all-iphone-model-identifiers.html).
+
+**Peak memory on iOS** is the memory iOS counts against the app (its "physical footprint", the number iOS checks before stopping an app). It leaves out the model weights, which are read straight from the model file, so it isn't comparable with the laptop's peak memory: it is closer to the laptop's working memory. It does not mean a model runs in that little memory.
+
+**Load times on iOS** are low for the same reason: the weights are read from the file when they're first needed, not when the model loads, so part of the loading cost shows up in the first reply instead.

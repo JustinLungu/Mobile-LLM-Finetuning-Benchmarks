@@ -121,9 +121,11 @@ extension ResultsFile.Device {
         let identifier = withUnsafeBytes(of: &system.machine) { bytes in
             String(decoding: bytes.prefix(while: { $0 != 0 }), as: UTF8.self)
         }
-        let (name, chip) = iPhoneModels[identifier] ?? (identifier, "unknown (\(identifier))")
+        let (model, chip) = iPhoneModels[identifier] ?? (nil, "unknown")
         return ResultsFile.Device(
-            name: name,
+            // Always keep the identifier, so the exact phone is never lost, e.g.
+            // "iPhone 18 Pro (iPhone19,2)", or just "iPhone19,2" if not in the table.
+            name: model.map { "\($0) (\(identifier))" } ?? identifier,
             os: "iOS \(UIDevice.current.systemVersion)",
             chip: chip,
             // Slightly less than the advertised size, because some is reserved.
@@ -131,8 +133,10 @@ extension ResultsFile.Device {
         )
     }
 
-    /// The iPhones most relevant to this project. Others are recorded by identifier.
-    private static let iPhoneModels: [String: (String, String)] = [
+    /// The iPhones most relevant to this project. Others are recorded by identifier only.
+    /// Identifiers don't follow a reliable pattern (iPhone 13 Pro Max is iPhone14,3,
+    /// iPhone 15 Pro is iPhone16,1), so this is a lookup table, not a formula.
+    private static let iPhoneModels: [String: (String?, String)] = [
         "iPhone13,1": ("iPhone 12 mini", "Apple A14 Bionic"),
         "iPhone13,2": ("iPhone 12", "Apple A14 Bionic"),
         "iPhone13,3": ("iPhone 12 Pro", "Apple A14 Bionic"),
@@ -150,5 +154,7 @@ extension ResultsFile.Device {
         "iPhone15,5": ("iPhone 15 Plus", "Apple A16 Bionic"),
         "iPhone16,1": ("iPhone 15 Pro", "Apple A17 Pro"),
         "iPhone16,2": ("iPhone 15 Pro Max", "Apple A17 Pro"),
+        // Confirmed by the owner; the chip name isn't confirmed.
+        "iPhone19,2": ("iPhone 18 Pro", "unknown"),
     ]
 }
