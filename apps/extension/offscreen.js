@@ -114,15 +114,20 @@ function status(fields) {
   chrome.runtime.sendMessage({ from: "offscreen", type: "model-status", ...fields }).catch(() => {});
 }
 
-// Chrome can expose WebGPU (navigator.gpu) and still refuse to hand out a GPU,
-// e.g. after a graphics driver hiccup, until Chrome restarts. wllama then
-// fails without returning, so check for a real GPU ourselves first.
-async function gpuAvailable() {
+// Whether to try the GPU, and why not. Chrome can expose WebGPU
+// (navigator.gpu) and still refuse to hand out a GPU, e.g. after a graphics
+// driver hiccup until Chrome restarts; wllama then fails without returning,
+// so we check ourselves first. Chrome on Linux almost never offers WebGPU to
+// extensions, and asking anyway makes Chrome log "No available adapters" in
+// the extension's error list, so there we go straight to the CPU.
+async function gpuCheck() {
+  const platform = (navigator.userAgentData && navigator.userAgentData.platform) || navigator.platform || "";
+  if (/linux/i.test(platform)) return { gpu: false, note: "Chrome on Linux doesn't offer the GPU to extensions" };
+  if (!navigator.gpu) return { gpu: false, note: "this Chrome doesn't support WebGPU" };
   try {
-    return !!(navigator.gpu && (await navigator.gpu.requestAdapter()));
-  } catch {
-    return false;
-  }
+    if (await navigator.gpu.requestAdapter()) return { gpu: true, note: "" };
+  } catch {}
+  return { gpu: false, note: "no GPU available right now; restarting Chrome may help" };
 }
 
 const withTimeout = (promise, ms, what) =>
@@ -167,19 +172,18 @@ async function load({ model, system, max_tokens }) {
       const file = await downloadModel(model, (loaded, total, note) =>
         status({ state: "downloading", key: model.key, loaded, total, note }),
       );
-      let gpu = await gpuAvailable();
-      let gpuNote = gpu ? "" : "no GPU available";
+      let { gpu, note: gpuNote } = await gpuCheck();
       if (gpu) {
         status({ state: "warming", key: model.key, note: "trying the GPU (switches to the CPU if that fails, within 90 s)" });
         try {
           await withTimeout(startEngine(file, system, true), 90000, "loading on the GPU");
         } catch (e) {
           gpu = false;
-          gpuNote = `GPU failed (${(e && e.message) || e}), using the CPU`;
+          gpuNote = `the GPU failed (${(e && e.message) || e}); restarting Chrome may help`;
         }
       }
       if (!gpu) {
-        status({ state: "warming", key: model.key, note: `on the CPU (${gpuNote}), about 30 s` });
+        status({ state: "warming", key: model.key, note: "on the CPU, about 30 s" });
         await startEngine(file, system, false);
       }
       current = { key: model.key, url: model.url };

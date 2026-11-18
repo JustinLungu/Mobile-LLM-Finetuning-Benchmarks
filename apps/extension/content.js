@@ -18,7 +18,12 @@
       return false;
     }
   };
-  if (window.__wilo) window.__wilo.dispose();
+  try {
+    if (window.__wilo) window.__wilo.dispose();
+  } catch {
+    // The old copy belongs to the unloaded version, so Chrome may refuse to run
+    // its code. It stops itself anyway: its connection checks fail.
+  }
   document.querySelectorAll("[data-wilo-overlay]").forEach((e) => e.remove());
 
   const site = location.hostname;

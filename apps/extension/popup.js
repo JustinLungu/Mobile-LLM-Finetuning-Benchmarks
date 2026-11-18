@@ -21,7 +21,7 @@ function showModel(model) {
     fill.style.width = "100%";
   } else if (model.state === "ready") {
     const extras = [model.gpu ? "on the GPU" : "on the CPU", model.multithread ? "multithreaded" : "single thread"].join(", ");
-    $("model-status").textContent = `✅ ${name} ready (${extras})` + (model.gpuNote ? `. ${model.gpuNote}; restarting Chrome may bring the GPU back.` : "");
+    $("model-status").textContent = `✅ ${name} ready (${extras})` + (model.gpuNote ? `. CPU because ${model.gpuNote}.` : "");
     fill.style.width = "100%";
   } else if (model.state === "error") {
     $("model-status").textContent = `❌ ${name}: ${model.error}`;
