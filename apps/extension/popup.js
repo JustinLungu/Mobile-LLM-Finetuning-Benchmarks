@@ -17,7 +17,7 @@ function showModel(model) {
     $("model-status").textContent = `Downloading ${name}: ${pct}% of ${gb(model.total || 0)} (only the first time)` + (model.note ? ` – ${model.note}` : "");
     fill.style.width = pct + "%";
   } else if (model.state === "warming") {
-    $("model-status").textContent = `Loading ${name}…`;
+    $("model-status").textContent = `Loading ${name}…` + (model.note ? ` ${model.note}` : "");
     fill.style.width = "100%";
   } else if (model.state === "ready") {
     const extras = [model.gpu ? "on the GPU" : "on the CPU", model.multithread ? "multithreaded" : "single thread"].join(", ");

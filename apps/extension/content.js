@@ -18,7 +18,24 @@
   // (e.g. a grant) must not close the overlay before the reply is shown.
   let talking = false;
 
-  const send = (type, fields = {}) => chrome.runtime.sendMessage({ type, site, ...fields });
+  // After the extension is reloaded or updated, scripts already running in open
+  // tabs lose their connection ("Extension context invalidated"). They then
+  // stop quietly; reloading the tab starts the new version.
+  const connected = () => {
+    try {
+      return !!chrome.runtime.id;
+    } catch {
+      return false;
+    }
+  };
+  const send = (type, fields = {}) => {
+    if (!connected()) return Promise.resolve(null);
+    try {
+      return chrome.runtime.sendMessage({ type, site, ...fields }).catch(() => null);
+    } catch {
+      return Promise.resolve(null);
+    }
+  };
 
   // --- Overlay ---------------------------------------------------------------
 
@@ -355,13 +372,9 @@
   }
 
   async function check() {
-    let res;
-    try {
-      res = await send("status");
-    } catch {
-      return; // extension reloaded: this old script is orphaned
-    }
-    session = res && res.session;
+    const res = await send("status");
+    if (!res) return; // no answer: extension reloaded, this old script is disconnected
+    session = res.session;
     if (!session) {
       if (mode !== "start") showStart();
       return;
@@ -385,6 +398,9 @@
     if (mode !== "timeup" || session.endsAt > Date.now()) schedule();
   });
 
-  setInterval(() => send("status").catch(() => {}), CHECK_IN_MS);
+  const checkIn = setInterval(() => {
+    if (connected()) send("status");
+    else clearInterval(checkIn);
+  }, CHECK_IN_MS);
   check();
 })();

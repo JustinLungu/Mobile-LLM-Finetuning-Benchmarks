@@ -110,6 +110,7 @@ async function downloadModel(model, onProgress) {
 }
 
 function status(fields) {
+  console.log("[wilo]", JSON.stringify(fields));
   chrome.runtime.sendMessage({ from: "offscreen", type: "model-status", ...fields }).catch(() => {});
 }
 
@@ -166,18 +167,21 @@ async function load({ model, system, max_tokens }) {
       const file = await downloadModel(model, (loaded, total, note) =>
         status({ state: "downloading", key: model.key, loaded, total, note }),
       );
-      status({ state: "warming", key: model.key });
       let gpu = await gpuAvailable();
       let gpuNote = gpu ? "" : "no GPU available";
       if (gpu) {
+        status({ state: "warming", key: model.key, note: "trying the GPU (switches to the CPU if that fails, within 90 s)" });
         try {
-          await withTimeout(startEngine(file, system, true), 180000, "loading on the GPU");
+          await withTimeout(startEngine(file, system, true), 90000, "loading on the GPU");
         } catch (e) {
           gpu = false;
           gpuNote = `GPU failed (${(e && e.message) || e}), using the CPU`;
         }
       }
-      if (!gpu) await startEngine(file, system, false);
+      if (!gpu) {
+        status({ state: "warming", key: model.key, note: `on the CPU (${gpuNote}), about 30 s` });
+        await startEngine(file, system, false);
+      }
       current = { key: model.key, url: model.url };
       status({
         state: "ready",
