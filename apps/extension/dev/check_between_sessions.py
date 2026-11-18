@@ -51,7 +51,7 @@ def main() -> int:
         wait_for(lambda: chrome.evaluate(page, page_js("return !!r && !!r.getElementById('sure');")), 30, every=0.5, what="onboarding")
         chrome.evaluate(page, page_js("r.getElementById('sure').click(); return true;"))
         for answer in ["00:00", "Balanced", "Sleeping on time", "Reading"]:
-            chrome.evaluate(page, page_js(f"[...r.querySelectorAll('.chip')].find(c => c.textContent === {json.dumps(answer)}).click(); return true;"))
+            wait_for(lambda: chrome.evaluate(page, page_js(f"const c = [...r.querySelectorAll('.chip')].find(c => c.textContent === {json.dumps(answer)}); if (c) c.click(); return !!c;")), 5, every=0.2, what=f"answer {answer}")
         wait_for(lambda: chrome.evaluate(page, page_js("return !!r.getElementById('intent');")), 10, every=0.3, what="start screen")
         chrome.evaluate(page, page_js("""const set = (id, v) => { const e = r.getElementById(id); e.value = v; e.dispatchEvent(new Event('input')); };
             set('intent', 'Check reels'); r.querySelector('.chip[data-min="10"]').click(); set('next', 'Sleep'); r.getElementById('go').click(); return true;"""))

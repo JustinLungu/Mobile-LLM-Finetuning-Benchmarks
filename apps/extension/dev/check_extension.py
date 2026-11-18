@@ -252,7 +252,7 @@ def main() -> int:
         screenshot("onboarding")
         chrome.evaluate(page, page_js("r.getElementById('sure').click(); return true;"))
         for answer in ["23:00", "Balanced", "Scrolling too long", "Reading"]:
-            chrome.evaluate(page, page_js(f"const c = [...r.querySelectorAll('.chip')].find(c => c.textContent === {json.dumps(answer)}); c.click(); return true;"))
+            wait_for(lambda: chrome.evaluate(page, page_js(f"const c = [...r.querySelectorAll('.chip')].find(c => c.textContent === {json.dumps(answer)}); if (c) c.click(); return !!c;")), 5, every=0.2, what=f"answer {answer}")
         print("Onboarding answered")
         wait_for(lambda: chrome.evaluate(page, page_js("return !!r.getElementById('intent');")), 10, every=0.3, what="start screen")
         print("Start screen shown")

@@ -82,11 +82,14 @@
         font: 15px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; color: var(--text);
       }
       .card {
-        width: min(420px, calc(100vw - 32px)); max-height: calc(100vh - 32px); overflow: auto;
+        /* One knob for the whole card's size: everything inside scales with it. */
+        --scale: 1.5;
+        zoom: var(--scale);
+        width: min(530px, calc((100vw - 32px) / var(--scale))); max-height: calc((100vh - 32px) / var(--scale)); overflow: auto;
         background: var(--card); color: var(--text); border-radius: 18px; padding: 22px; box-sizing: border-box;
         box-shadow: 0 20px 60px rgba(0, 0, 0, 0.35);
       }
-      h1 { font-size: 19px; margin: 0 0 4px; color: var(--text); }
+      h1 { font-size: 20px; margin: 0 0 4px; color: var(--text); }
       .sub { color: var(--sub); margin: 0 0 16px; }
       label { display: block; font-weight: 600; margin: 12px 0 6px; color: var(--text); }
       .optional { font-weight: 400; color: var(--muted); }
@@ -133,7 +136,7 @@
       select { font: inherit; color: var(--text); background: var(--field); border: 1px solid var(--line); border-radius: 10px; padding: 8px; }
       .question { margin: 10px 0 14px; padding: 12px; border-radius: 12px; background: var(--bubble); }
       .question .note { margin: 6px 0 0; }
-      .qhead { font-size: 12px; font-weight: 600; letter-spacing: 0.03em; text-transform: uppercase; color: var(--muted); margin-bottom: 4px; }
+      .qhead { font-size: 11.5px; font-weight: 600; letter-spacing: 0.03em; text-transform: uppercase; color: var(--muted); margin-bottom: 4px; }
       .qtext { margin-bottom: 8px; }
       .own { display: flex; gap: 6px; margin-top: 8px; }
       .own input { flex: 1; padding: 6px 9px; }
@@ -142,7 +145,7 @@
       .chip.small { padding: 4px 11px; font-size: 13px; }
       .meta { display: flex; align-items: center; gap: 4px; margin-top: 6px; font-size: 12px; }
       .tag { font-weight: 600; color: var(--sub); margin-right: auto; }
-      .rate { background: none; border: 0; cursor: pointer; font-size: 13px; padding: 0 2px; opacity: 0.45; }
+      .rate { background: none; border: 0; cursor: pointer; font-size: 14px; padding: 0 2px; opacity: 0.45; }
       .rate:hover, .rate.picked { opacity: 1; }
       .err { color: var(--error); font-size: 13px; margin-top: 8px; }
     </style>
@@ -318,7 +321,7 @@
     shadow.innerHTML = `
       <style>
         .toast { --card: #ffffff; --text: #0f172a; --muted: #64748b; color-scheme: light;
-          font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; background: var(--card); color: var(--text);
+          font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; zoom: 1.4; background: var(--card); color: var(--text);
           border-radius: 14px; padding: 12px 36px 12px 14px; max-width: 300px; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3); position: relative; }
         @media (prefers-color-scheme: dark) { .toast { --card: #1e1f24; --text: #f1f5f9; --muted: #9aa3b2; color-scheme: dark; } }
         b { display: block; margin-bottom: 2px; }
