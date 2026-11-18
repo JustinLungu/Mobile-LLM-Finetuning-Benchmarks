@@ -28,6 +28,7 @@ Works in Chrome on Windows, Mac and Linux, with 8 GB of RAM or more. While Wilo 
 uv run apps/extension/setup.py          # downloads wllama, writes generated/config.js
 uv run apps/extension/setup.py --zip    # also makes dist/wilo-extension-<version>.zip for testers
 uv run apps/extension/dev/check_extension.py   # end-to-end check in headless Chrome
+uv run apps/extension/dev/check_open_tabs.py   # Wilo in tabs open before an install or update
 ```
 
 `setup.py` takes Wilo's rules from `spec/bench_prompts.json` and the model links from `models/registry.yaml`, so the extension uses the same prompt and model files as the benchmarks and the training data. To load your working copy, use **Load unpacked** on `apps/extension/` itself. After editing files, click the reload icon on `chrome://extensions`.

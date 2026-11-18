@@ -330,7 +330,10 @@ chrome.runtime.onStartup.addListener(() => ensureOffscreen());
 chrome.runtime.onInstalled.addListener((details) => {
   console.log(`[wilo] installed (${details.reason})`);
   restartModel();
-  injectIntoOpenTabs();
+  // Right after a reload Chrome is still tearing down the old version's scripts
+  // in open tabs, and a copy injected at that moment is torn down with them
+  // ("Extension context invalidated"). A short wait avoids that.
+  setTimeout(injectIntoOpenTabs, 1500);
 });
 
 // For debugging from the service worker's DevTools console (and dev/check_extension.py).
