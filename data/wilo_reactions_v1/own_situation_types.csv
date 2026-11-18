@@ -1,0 +1,11 @@
+annotator,id,reason_type,note
+2,1,leisure,Passing time on the train; classified by Claude
+2,2,leisure,Passing time on the train; classified by Claude
+2,3,continuation,Still finding recipes; classified by Claude
+2,4,continuation,Still looking for a dinner recipe; classified by Claude
+2,5,vague,"""just a bit more scrolling""; classified by Claude"
+2,6,new_task,DM done, now wants to scroll; classified by Claude
+2,7,new_task,DM done, now wants stories; classified by Claude
+2,8,leisure,Friday relaxing; classified by Claude
+2,9,leisure,Relaxing, already over an hour; classified by Claude
+2,10,continuation,Still finding travel ideas; classified by Claude
