@@ -22,7 +22,6 @@
   const site = location.hostname;
   const CHECK_IN_MS = 30 * 1000; // tells the background script this tab is still open
   const DECLINE_WAIT_S = 10; // wait before asking again grows by this much per decline
-  const OVERRIDE_AFTER_S = 20; // "stay anyway" appears after this long
 
   let session = null;
   let timer = null;
@@ -346,7 +345,7 @@
     const used = Math.max(1, Math.round((Date.now() - session.startedAt) / 60000));
     card.innerHTML = `
       <h1>Time's up ⏰</h1>
-      <p class="sub">You planned ${session.agreedMin} min to ${esc(lowerFirst(session.intent))}. You've been on ${esc(session.app)} for ${used} min.</p>
+      <p class="sub">You planned ${session.agreedMin} min for “${esc(session.intent)}”. You've been on ${esc(session.app)} for ${used} min.</p>
       <div class="chat" id="chat"></div>
       <div id="actions"></div>`;
     // After a reload, show this time-up's conversation so far and carry on.
@@ -361,7 +360,6 @@
     else askBox();
   }
 
-  const lowerFirst = (s) => String(s).slice(0, 1).toLowerCase() + String(s).slice(1);
 
   function bubble(text, who) {
     const b = document.createElement("div");
@@ -403,17 +401,17 @@
   }
 
   // Text box to ask for more time, plus "I'm done". waitS > 0 delays asking.
-  function askBox(waitS = 0, showOverride = false) {
+  // afterDecline: Wilo just said no, so ask for a real reason.
+  function askBox(waitS = 0, afterDecline = false) {
     const actions = root.getElementById("actions");
     actions.innerHTML = `
-      <label for="why">${showOverride ? "Still want more time? Give Wilo a real reason." : "Need more time? Tell Wilo why."}</label>
+      <label for="why">${afterDecline ? "Still want more time? Give Wilo a real reason." : "Need more time? Tell Wilo why."}</label>
       <textarea id="why" maxlength="500" placeholder="e.g. I'm still answering the group's questions"></textarea>
       <div class="row">
         <button class="alt" id="done">I'm done</button>
         <button class="main" id="ask" disabled>Ask Wilo</button>
       </div>
-      <div class="note" id="wait"></div>
-      ${showOverride ? `<button class="link" id="override" style="display: none;">Stay anyway (5 min)</button>` : ""}`;
+      <div class="note" id="wait"></div>`;
     const why = root.getElementById("why");
     const ask = root.getElementById("ask");
     const waitNote = root.getElementById("wait");
@@ -423,22 +421,12 @@
     if (waiting > 0) {
       const tick = () => {
         waitNote.textContent = waiting > 0
-          ? `Wilo said no a few times, so take a breath: you can ask again in ${waiting} s.`
+          ? `Wilo said no a few times, so take a breath: you can ask again in ${waiting} s, or call it a day.`
           : "";
         refresh();
         if (waiting-- > 0) setTimeout(tick, 1000);
       };
       tick();
-    }
-    if (showOverride) {
-      setTimeout(() => {
-        const o = root.getElementById("override");
-        if (o) o.style.display = "inline";
-      }, OVERRIDE_AFTER_S * 1000);
-      root.getElementById("override").addEventListener("click", async () => {
-        const res = await send("override");
-        resume(res);
-      });
     }
     root.getElementById("done").addEventListener("click", () => send("done"));
     ask.addEventListener("click", () => askWilo(why.value.trim()));

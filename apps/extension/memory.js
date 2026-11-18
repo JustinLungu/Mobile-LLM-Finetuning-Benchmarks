@@ -60,7 +60,8 @@ function bedtimeHour(answer) {
 // --- Learning from finished sessions ------------------------------------------
 
 function learned(log) {
-  const ends = log.filter((e) => e.kind === "session-end" && e.usedMin > 0);
+  // Fast-forwarded sessions ("Time's up now") don't reflect real habits.
+  const ends = log.filter((e) => e.kind === "session-end" && e.usedMin > 0 && !e.fastForwarded);
   const byApp = {};
   for (const e of ends) (byApp[e.app] ||= []).push(e);
   const typical = [];
@@ -185,7 +186,7 @@ function candidates(profile, log, { app, now }) {
   }
 
   // Sessions keep running long: realistic times or hold to the plan?
-  const ends = log.filter((e) => e.kind === "session-end" && e.app === app);
+  const ends = log.filter((e) => e.kind === "session-end" && e.app === app && !e.fastForwarded);
   if (ends.length >= 4 && ends.filter((e) => e.usedMin > 1.5 * e.agreedMin).length / ends.length >= 0.5) {
     list.push({
       key: `overrun-${app}`,

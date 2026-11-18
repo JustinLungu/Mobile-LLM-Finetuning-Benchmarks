@@ -13,8 +13,6 @@ import { ONBOARDING, memoryNote, nextQuestion, recordAnswer } from "./memory.js"
 // A session ends when no tab of the site has been open for this long.
 const GONE_AFTER_MS = 2 * 60 * 1000;
 const LOG_LIMIT = 5000;
-// "Stay anyway" after a decline: Wilo never blocks completely (DECISIONS §5).
-const OVERRIDE_MINUTES = 5;
 
 // Content scripts read sessions directly to notice changes from other tabs.
 chrome.storage.session.setAccessLevel({ accessLevel: "TRUSTED_AND_UNTRUSTED_CONTEXTS" });
@@ -216,6 +214,7 @@ async function endSession(site, s, reason) {
     startHour: started.getHours(),
     weekday: started.getDay(),
     reason,
+    fastForwarded: !!s.fastForwarded,
   });
   await updateSession(site, () => undefined);
 }
@@ -237,7 +236,8 @@ async function closeConversation(site, outcome, minutes = 0) {
       next: s.next,
       agreedMin: s.agreedMin,
       usedMin: Math.round((Date.now() - s.startedAt) / 60000),
-      outcome, // granted, took offer, stayed anyway, done
+      outcome, // granted, took offer, done
+      fastForwarded: !!s.fastForwarded, // "Time's up now" was used: not a real time-up
       minutes,
       memoryNote: note,
       system: systemPrompt(note),
@@ -357,11 +357,6 @@ const handlers = {
     return { session };
   },
 
-  async override(msg) {
-    const session = await extend(msg.site, OVERRIDE_MINUTES);
-    await closeConversation(msg.site, "stayed anyway", OVERRIDE_MINUTES);
-    return { session };
-  },
 
   async done(msg, sender) {
     await closeConversation(msg.site, "done");
@@ -378,9 +373,18 @@ const handlers = {
   },
 
   // Popup, for testing: end the time of every open session now.
+  // Fast-forwards the whole session (start and end), as if the planned time had
+  // passed, so "time used" matches the plan for the screen and for Wilo.
+  // Marked in the log so these can be told apart from real sessions.
   async "time-up-now"() {
     const sessions = await getSessions();
-    for (const s of Object.values(sessions)) s.endsAt = Math.min(s.endsAt, Date.now());
+    const now = Date.now();
+    for (const s of Object.values(sessions)) {
+      const skip = Math.max(0, s.endsAt - now);
+      s.startedAt -= skip;
+      s.endsAt -= skip;
+      s.fastForwarded = true;
+    }
     await chrome.storage.session.set({ sessions });
     return {};
   },

@@ -50,10 +50,10 @@ To try another model or model file (e.g. our fine-tuned one): Wilo icon → **Ad
 
 - **Wilo sees the whole conversation of the session** (up to 12 earlier exchanges). Each user turn is the situation at that moment (time, app, intent, agreed and used minutes, extensions, next event) plus what the user said, in exactly the training format. Wilo's instructions are in `spec/wilo_prompt.json`, and its JSON reply is forced to the schema, so it can't be malformed.
 - **Each reply shows its decision** (✅ +10 min / 🤝 Offer: 5 min / ✋ No extra time) and 👍/👎 buttons.
-- **When a time-up conversation ends,** it's saved whole in the log with its outcome (granted, took offer, stayed anyway, done) and the minutes given. These are ready-made fine-tuning examples.
+- **When a time-up conversation ends,** it's saved whole in the log with its outcome (granted, took offer, done) and the minutes given. These are ready-made fine-tuning examples.
 - **Grant:** the session is extended.
 - **Counter-offer:** the user can take it or explain more.
-- **Decline:** the user can close the tab or ask again. Asking again is immediate after the first decline, then there's a wait that grows with each further decline (10 s, 20 s, …). A small "stay anyway (5 min)" link appears after 20 s, because Wilo never blocks completely.
+- **Decline:** the user can close the tab or ask again. Asking again is immediate after the first decline, then there's a wait that grows with each further decline (10 s, 20 s, …). There is no way around a "no": the only ways out are a real reason or "I'm done".
 - **When a session ends:** after no tab of that site has been open for 2 minutes.
 
 **What Wilo knows about the user** is written by Wilo itself, in the same layout as the training data's memory note (Schedule / Preferences / Typical sessions / Patterns). It comes from three sources:
