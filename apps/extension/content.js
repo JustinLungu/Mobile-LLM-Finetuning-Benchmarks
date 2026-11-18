@@ -29,45 +29,72 @@
   root.innerHTML = `
     <style>
       :host { all: initial; }
+      /* Colours as tokens, with a dark set that follows the system setting.
+         Every element sets its colours explicitly: sites like Instagram switch
+         the page to dark mode, which would otherwise turn default button text
+         white on our white card. */
+      .backdrop {
+        --card: #ffffff; --text: #0f172a; --muted: #64748b; --sub: #475569;
+        --field: #f8fafc; --line: #cbd5e1; --chip: #ffffff; --alt: #e2e8f0;
+        --accent: #4f46e5; --on-accent: #ffffff; --bubble: #f1f5f9; --error: #b91c1c;
+        --shade: rgba(15, 23, 42, 0.72);
+        color-scheme: light;
+      }
+      @media (prefers-color-scheme: dark) {
+        .backdrop {
+          --card: #1e1f24; --text: #f1f5f9; --muted: #9aa3b2; --sub: #b6bfcc;
+          --field: #2a2c33; --line: #3f424c; --chip: #2a2c33; --alt: #343741;
+          --accent: #6366f1; --on-accent: #ffffff; --bubble: #2f323b; --error: #f87171;
+          --shade: rgba(0, 0, 0, 0.7);
+          color-scheme: dark;
+        }
+      }
       .backdrop {
         position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
-        background: rgba(15, 23, 42, 0.72); backdrop-filter: blur(6px);
-        font: 15px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; color: #0f172a;
+        background: var(--shade); backdrop-filter: blur(6px);
+        font: 15px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; color: var(--text);
       }
       .card {
         width: min(420px, calc(100vw - 32px)); max-height: calc(100vh - 32px); overflow: auto;
-        background: #fff; border-radius: 18px; padding: 22px; box-sizing: border-box;
+        background: var(--card); color: var(--text); border-radius: 18px; padding: 22px; box-sizing: border-box;
         box-shadow: 0 20px 60px rgba(0, 0, 0, 0.35);
       }
-      h1 { font-size: 19px; margin: 0 0 4px; }
-      .sub { color: #475569; margin: 0 0 16px; }
-      label { display: block; font-weight: 600; margin: 12px 0 6px; }
+      h1 { font-size: 19px; margin: 0 0 4px; color: var(--text); }
+      .sub { color: var(--sub); margin: 0 0 16px; }
+      label { display: block; font-weight: 600; margin: 12px 0 6px; color: var(--text); }
+      .optional { font-weight: 400; color: var(--muted); }
       input, textarea {
-        width: 100%; box-sizing: border-box; font: inherit; color: inherit; background: #f8fafc;
-        border: 1px solid #cbd5e1; border-radius: 10px; padding: 9px 11px;
+        width: 100%; box-sizing: border-box; font: inherit; color: var(--text); background: var(--field);
+        border: 1px solid var(--line); border-radius: 10px; padding: 9px 11px;
       }
+      input::placeholder, textarea::placeholder { color: var(--muted); opacity: 1; }
       textarea { resize: vertical; min-height: 64px; }
-      input:focus, textarea:focus { outline: 2px solid #6366f1; border-color: transparent; }
+      input:focus, textarea:focus { outline: 2px solid var(--accent); border-color: transparent; }
       .chips { display: flex; gap: 8px; flex-wrap: wrap; }
       .chip {
-        border: 1px solid #cbd5e1; background: #fff; border-radius: 999px; padding: 6px 14px; cursor: pointer; font: inherit;
+        border: 1px solid var(--line); background: var(--chip); color: var(--text);
+        border-radius: 999px; padding: 6px 14px; cursor: pointer; font: inherit;
       }
-      .chip.on { background: #4f46e5; border-color: #4f46e5; color: #fff; }
+      .chip.on { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
       .row { display: flex; gap: 8px; margin-top: 16px; flex-wrap: wrap; }
       button.main, button.alt {
         flex: 1; font: inherit; font-weight: 600; border-radius: 10px; padding: 10px 14px; cursor: pointer; border: 0;
       }
-      button.main { background: #4f46e5; color: #fff; }
-      button.alt { background: #e2e8f0; color: #0f172a; }
+      button.main { background: var(--accent); color: var(--on-accent); }
+      button.alt { background: var(--alt); color: var(--text); }
       button:disabled { opacity: 0.5; cursor: default; }
-      .link { background: none; border: 0; color: #64748b; text-decoration: underline; cursor: pointer; font: inherit; font-size: 13px; padding: 0; margin-top: 12px; }
+      .link { background: none; border: 0; color: var(--muted); text-decoration: underline; cursor: pointer; font: inherit; font-size: 13px; padding: 0; margin-top: 12px; }
       .chat { display: flex; flex-direction: column; gap: 8px; margin: 12px 0 0; }
       .bubble { padding: 9px 12px; border-radius: 14px; max-width: 85%; white-space: pre-wrap; }
-      .bubble.user { align-self: flex-end; background: #4f46e5; color: #fff; border-bottom-right-radius: 4px; }
-      .bubble.wilo { align-self: flex-start; background: #f1f5f9; border-bottom-left-radius: 4px; }
-      .bubble.thinking { color: #64748b; font-style: italic; }
-      .note { color: #64748b; font-size: 13px; margin-top: 8px; }
-      .err { color: #b91c1c; font-size: 13px; margin-top: 8px; }
+      .bubble.user { align-self: flex-end; background: var(--accent); color: var(--on-accent); border-bottom-right-radius: 4px; }
+      .bubble.wilo { align-self: flex-start; background: var(--bubble); color: var(--text); border-bottom-left-radius: 4px; }
+      .bubble.thinking { color: var(--muted); font-style: italic; }
+      .note { color: var(--muted); font-size: 13px; margin-top: 8px; }
+      .meta { display: flex; align-items: center; gap: 4px; margin-top: 6px; font-size: 12px; }
+      .tag { font-weight: 600; color: var(--sub); margin-right: auto; }
+      .rate { background: none; border: 0; cursor: pointer; font-size: 13px; padding: 0 2px; opacity: 0.45; }
+      .rate:hover, .rate.picked { opacity: 1; }
+      .err { color: var(--error); font-size: 13px; margin-top: 8px; }
     </style>
     <div class="backdrop"><div class="card" id="card"></div></div>`;
   const card = root.getElementById("card");
@@ -117,7 +144,7 @@
         ${[5, 10, 15, 30].map((m) => `<button class="chip" data-min="${m}">${m} min</button>`).join("")}
         <input id="custom" type="number" min="1" max="240" placeholder="other" style="width: 90px;" />
       </div>
-      <label for="next">Anything planned after? <span style="font-weight: 400; color: #64748b;">(optional)</span></label>
+      <label for="next">Anything planned after? <span class="optional">(optional)</span></label>
       <input id="next" maxlength="200" placeholder="e.g. dinner at 19:30" />
       <div class="row"><button class="main" id="go" disabled>Start</button></div>
       <div class="err" id="err"></div>`;
@@ -165,7 +192,16 @@
       <p class="sub">You planned ${session.agreedMin} min to ${esc(lowerFirst(session.intent))}. You've been on ${esc(session.app)} for ${used} min.</p>
       <div class="chat" id="chat"></div>
       <div id="actions"></div>`;
-    askBox();
+    // After a reload, show this time-up's conversation so far and carry on.
+    const turns = (session.turns || []).slice(session.conversationFrom || 0);
+    for (const t of turns) {
+      bubble(t.says, "user");
+      wiloBubble(t.reply, t.id);
+    }
+    const last = turns[turns.length - 1];
+    if (last && last.reply.decision === "counter_offer") offerActions(last.reply);
+    else if (last && last.reply.decision === "decline") declinedActions();
+    else askBox();
   }
 
   const lowerFirst = (s) => String(s).slice(0, 1).toLowerCase() + String(s).slice(1);
@@ -179,18 +215,48 @@
     return b;
   }
 
+  const DECISION_LABEL = {
+    grant: (m) => `✅ +${m} min`,
+    counter_offer: (m) => `🤝 Offer: ${m} min`,
+    decline: () => "✋ No extra time",
+  };
+
+  // Wilo's message, its decision in plain words, and 👍/👎 (logged, so testers'
+  // logs tell us which replies to learn from).
+  function wiloBubble(reply, id) {
+    const b = bubble(reply.message, "wilo");
+    const meta = document.createElement("div");
+    meta.className = "meta";
+    meta.innerHTML = `<span class="tag">${esc((DECISION_LABEL[reply.decision] || (() => ""))(reply.minutes))}</span>`;
+    if (id) {
+      for (const [good, icon] of [[true, "👍"], [false, "👎"]]) {
+        const button = document.createElement("button");
+        button.className = "rate";
+        button.title = good ? "Good reply" : "Bad reply";
+        button.textContent = icon;
+        button.addEventListener("click", () => {
+          send("feedback", { id, good });
+          meta.querySelectorAll(".rate").forEach((x) => x.classList.toggle("picked", x === button));
+        });
+        meta.appendChild(button);
+      }
+    }
+    b.appendChild(meta);
+    return b;
+  }
+
   // Text box to ask for more time, plus "I'm done". waitS > 0 delays asking.
   function askBox(waitS = 0, showOverride = false) {
     const actions = root.getElementById("actions");
     actions.innerHTML = `
-      <label for="why">Need more time? Tell Wilo why.</label>
+      <label for="why">${showOverride ? "Still want more time? Give Wilo a real reason." : "Need more time? Tell Wilo why."}</label>
       <textarea id="why" maxlength="500" placeholder="e.g. I'm still answering the group's questions"></textarea>
       <div class="row">
         <button class="alt" id="done">I'm done</button>
         <button class="main" id="ask" disabled>Ask Wilo</button>
       </div>
       <div class="note" id="wait"></div>
-      ${showOverride ? `<button class="link" id="override" style="display: none;">Stay anyway (${5} min)</button>` : ""}`;
+      ${showOverride ? `<button class="link" id="override" style="display: none;">Stay anyway (5 min)</button>` : ""}`;
     const why = root.getElementById("why");
     const ask = root.getElementById("ask");
     const waitNote = root.getElementById("wait");
@@ -199,7 +265,9 @@
     why.addEventListener("input", refresh);
     if (waiting > 0) {
       const tick = () => {
-        waitNote.textContent = waiting > 0 ? `You can ask again in ${waiting} s.` : "";
+        waitNote.textContent = waiting > 0
+          ? `Wilo said no a few times, so take a breath: you can ask again in ${waiting} s.`
+          : "";
         refresh();
         if (waiting-- > 0) setTimeout(tick, 1000);
       };
@@ -220,6 +288,26 @@
     setTimeout(() => why.focus(), 50);
   }
 
+  function offerActions(reply) {
+    const actions = root.getElementById("actions");
+    actions.innerHTML = `<div class="row">
+        <button class="alt" id="done">I'm done</button>
+        <button class="main" id="take">Take ${reply.minutes} min</button>
+      </div>
+      <button class="link" id="argue">Explain more instead</button>`;
+    root.getElementById("done").addEventListener("click", () => send("done"));
+    root.getElementById("take").addEventListener("click", async () => resume(await send("accept", { minutes: reply.minutes })));
+    root.getElementById("argue").addEventListener("click", () => askBox());
+  }
+
+  // Declined: asking again is always possible. The first time straight away,
+  // then with a wait that grows with each further decline (friction, DECISIONS §5).
+  async function declinedActions() {
+    const latest = await send("status");
+    const declines = (latest && latest.session && latest.session.declines) || 1;
+    askBox(DECLINE_WAIT_S * (declines - 1), true);
+  }
+
   async function askWilo(text) {
     talking = true;
     bubble(text, "user");
@@ -234,24 +322,14 @@
       return;
     }
     const { reply } = res;
-    bubble(reply.message, "wilo");
+    wiloBubble(reply, res.fallback ? null : res.id);
     if (reply.decision === "grant") {
-      actions.innerHTML = `<div class="row"><button class="main" id="ok">Thanks, Wilo (${reply.minutes} min)</button></div>`;
+      actions.innerHTML = `<div class="row"><button class="main" id="ok">Thanks, Wilo</button></div>`;
       root.getElementById("ok").addEventListener("click", async () => resume(await send("status")));
     } else if (reply.decision === "counter_offer") {
-      actions.innerHTML = `<div class="row">
-          <button class="alt" id="done">I'm done</button>
-          <button class="main" id="take">Take ${reply.minutes} min</button>
-        </div>
-        <button class="link" id="argue">Explain more instead</button>`;
-      root.getElementById("done").addEventListener("click", () => send("done"));
-      root.getElementById("take").addEventListener("click", async () => resume(await send("accept", { minutes: reply.minutes })));
-      root.getElementById("argue").addEventListener("click", () => askBox());
+      offerActions(reply);
     } else {
-      // Declined: asking again is always possible, but each decline adds a wait.
-      const latest = await send("status");
-      const declines = (latest && latest.session && latest.session.declines) || 1;
-      askBox(DECLINE_WAIT_S * declines, true);
+      declinedActions();
     }
   }
 

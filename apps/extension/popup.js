@@ -20,8 +20,8 @@ function showModel(model) {
     $("model-status").textContent = `Loading ${name}…`;
     fill.style.width = "100%";
   } else if (model.state === "ready") {
-    const extras = [model.webgpu ? "GPU available" : "CPU only", model.multithread ? "multithreaded" : "single thread"].join(", ");
-    $("model-status").textContent = `✅ ${name} ready (${extras})`;
+    const extras = [model.gpu ? "on the GPU" : "on the CPU", model.multithread ? "multithreaded" : "single thread"].join(", ");
+    $("model-status").textContent = `✅ ${name} ready (${extras})` + (model.gpuNote ? `. ${model.gpuNote}; restarting Chrome may bring the GPU back.` : "");
     fill.style.width = "100%";
   } else if (model.state === "error") {
     $("model-status").textContent = `❌ ${name}: ${model.error}`;
@@ -45,14 +45,14 @@ function showSessions(sessions) {
 
 async function showLogCount() {
   const { log = [] } = await chrome.storage.local.get("log");
-  $("log-count").textContent = `${log.filter((e) => e.kind === "negotiation").length} negotiations so far.`;
+  const count = (kind) => log.filter((e) => e.kind === kind).length;
+  $("log-count").textContent = `${count("conversation")} conversations, ${count("negotiation")} replies so far.`;
 }
 
 async function init() {
   const s = await settings();
   for (const m of CONFIG.models) {
-    const option = new Option(`${m.name} (${gb(m.sizeBytes)})${m.browserReady ? "" : " – too big for the browser yet"}`, m.key);
-    option.disabled = !m.browserReady;
+    const option = new Option(`${m.name} (${gb(m.sizeBytes)})`, m.key);
     $("model").add(option);
   }
   $("model").value = s.modelKey;
@@ -76,6 +76,11 @@ async function init() {
     const modelChanged = before.modelKey !== after.modelKey || before.customModelUrl !== after.customModelUrl;
     if (modelChanged) await chrome.runtime.sendMessage({ type: "restart-model" });
     $("saved").textContent = modelChanged ? "Saved. Loading the new model…" : "Saved.";
+  });
+
+  $("time-up").addEventListener("click", async () => {
+    await chrome.runtime.sendMessage({ type: "time-up-now" });
+    window.close();
   });
 
   $("download").addEventListener("click", async () => {

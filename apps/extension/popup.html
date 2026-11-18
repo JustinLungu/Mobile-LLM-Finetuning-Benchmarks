@@ -15,7 +15,7 @@
     <select id="model"></select>
     <details>
       <summary>Use another model file</summary>
-      <p class="hint">A link to a .gguf file under 2 GB, e.g. our fine-tuned model. Leave empty to use the list above.</p>
+      <p class="hint">A link to a .gguf file, e.g. our fine-tuned model. Leave empty to use the list above.</p>
       <input id="custom-url" placeholder="https://huggingface.co/…/model.gguf" />
     </details>
   </section>
@@ -32,11 +32,12 @@
   <section>
     <h2>Right now</h2>
     <div id="sessions" class="hint">No open sessions.</div>
+    <button id="time-up">Time's up now (to try Wilo)</button>
   </section>
 
   <section>
     <h2>Log</h2>
-    <p class="hint">Every session and negotiation, stored only on this computer. <span id="log-count"></span></p>
+    <p class="hint">Your conversations with Wilo (with your note above and your 👍/👎), stored only on this computer. <span id="log-count"></span></p>
     <div class="row">
       <button id="download">Download log</button>
       <button id="clear">Clear log</button>
