@@ -29,7 +29,8 @@ from openpyxl import load_workbook
 
 HERE = Path(__file__).resolve().parent
 REPO_ROOT = HERE.parent.parent
-PROMPTS_PATH = REPO_ROOT / "spec" / "bench_prompts.json"
+# Wilo's instructions, the same ones the browser extension uses.
+PROMPT_PATH = REPO_ROOT / "spec" / "wilo_prompt.json"
 
 DECISIONS = {"Grant": "grant", "Counter-offer": "counter_offer", "Decline": "decline"}
 # Wilo's system prompt allows these four. Manipulation is answered like a vague
@@ -126,7 +127,8 @@ def main(argv: list[str]) -> int:
         print(__doc__)
         return 1
     sheets = [Path(p) for p in argv]
-    system = json.loads(PROMPTS_PATH.read_text())["system"]
+    prompt = json.loads(PROMPT_PATH.read_text())
+    system = f"{prompt['rules']}\n\n{prompt['memory_header']}\n{prompt['example_memory']}"
     message_annotators = [int(x) for x in (HERE / "message_annotators.txt").read_text().split()]
 
     scenarios = {int(r["id"]): r for r in csv.DictReader(open(HERE / "scenarios.csv"))}
