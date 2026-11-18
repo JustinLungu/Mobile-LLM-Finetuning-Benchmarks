@@ -11,7 +11,7 @@ You get a file called `wilo-extension-0.1.0.zip`.
 3. Turn on **Developer mode** (top right).
 4. Click **Load unpacked** and pick the `wilo-extension` folder.
 5. Click the puzzle icon in the toolbar and pin **Wilo**. Click it: the first time, Wilo downloads its model (2 GB). This takes a few minutes on good Wi-Fi. If you close Chrome, it continues where it stopped.
-6. Open instagram.com and use it as usual. The first time, Wilo offers 3 quick questions to get to know you (tap an answer or type your own; you can skip). Now and then it asks one more on the start screen, which is always optional.
+6. Open instagram.com and use it as usual. The first time, Wilo offers 4 quick questions to get to know you (tap an answer or type your own; you can skip). Now and then it asks one more on the start screen, which is always optional.
 
 Works in Chrome on Windows, Mac and Linux, with 8 GB of RAM or more. While Wilo is loaded, Chrome uses about 2–4 GB more memory, depending on the model.
 
@@ -29,6 +29,7 @@ uv run apps/extension/setup.py --zip    # also makes dist/wilo-extension-<versio
 uv run apps/extension/dev/check_extension.py   # end-to-end check in headless Chrome
 uv run apps/extension/dev/check_open_tabs.py   # Wilo in tabs open before an install or update
 uv run apps/extension/dev/check_memory.py      # what Wilo learns, and its check-in questions
+uv run apps/extension/dev/check_between_sessions.py  # welcome back after a session, free-time rules
 ```
 
 `setup.py` takes Wilo's rules from `spec/bench_prompts.json` and the model links from `models/registry.yaml`, so the extension uses the same prompt and model files as the benchmarks and the training data. To load your working copy, use **Load unpacked** on `apps/extension/` itself. After editing files, click the reload icon on `chrome://extensions`.
@@ -57,7 +58,7 @@ To try another model or model file (e.g. our fine-tuned one): Wilo icon → **Ad
 - **When a session ends:** after no tab of that site has been open for 2 minutes.
 
 **What Wilo knows about the user** is written by Wilo itself, in the same layout as the training data's memory note (Schedule / Preferences / Typical sessions / Patterns). It comes from three sources:
-- **Onboarding:** the first time, 3 optional questions (bedtime, how strict, what to help with). Users tap an answer or type their own.
+- **Onboarding:** the first time, 4 optional questions (bedtime, how strict, what to help with, what they enjoy besides social media). Users tap an answer or type their own.
 - **Check-in questions:** at most one a day, at the top of the start screen ("Let's get to know each other a bit"), each asked once and always skippable, with "Don't ask me questions" to stop them. Wilo asks when it notices something:
   - a usual time ("is that free time?")
   - an unusual time
@@ -66,6 +67,8 @@ To try another model or model file (e.g. our fine-tuned one): Wilo icon → **Ad
   - sessions that keep running long
 
   Otherwise about once a week it asks an open question about the week. Typed answers are kept in the user's own words.
+- **Recently:** the last sessions of the past 3 hours (when they ended, what was planned, what came next, Wilo's last answer). Coming back soon after, the start screen says *"Welcome back. You left Instagram 1 min ago and said "Sleep" was next."*
+- **Their rules:** free-time windows, set on the start screen ("Set up free time (no explaining needed)") or in the popup ("Your rules"), e.g. weekdays 17:00–19:00, with an optional "Why this time?" kept in the user's words. In a window there's no start screen, only a small note ("Free time until 19:00, enjoy! 📚 A few pages of your book would be nice too.", using the hobby from the onboarding). A session runs until the window ends, then the normal time-up.
 - **Learned:** typical session length per app (median of at least 3 finished sessions), how often the user asks for more, and overruns, especially late at night.
 
 You can read the note in the popup under **Advanced**.

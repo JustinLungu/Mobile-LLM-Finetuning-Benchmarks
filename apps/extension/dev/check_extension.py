@@ -247,11 +247,11 @@ def main() -> int:
             path = out / f"{name}_{theme}.png"
             path.write_bytes(base64.b64decode(shot["data"]))
             print(f"Screenshot: {path}")
-        # First time: the onboarding (three tap questions), then the start form.
+        # First time: the onboarding (four tap questions), then the start form.
         wait_for(lambda: chrome.evaluate(page, page_js("return !!r && host.style.display === 'block' && !!r.getElementById('sure');")), 60, what="onboarding")
         screenshot("onboarding")
         chrome.evaluate(page, page_js("r.getElementById('sure').click(); return true;"))
-        for answer in ["23:00", "Balanced", "Scrolling too long"]:
+        for answer in ["23:00", "Balanced", "Scrolling too long", "Reading"]:
             chrome.evaluate(page, page_js(f"const c = [...r.querySelectorAll('.chip')].find(c => c.textContent === {json.dumps(answer)}); c.click(); return true;"))
         print("Onboarding answered")
         wait_for(lambda: chrome.evaluate(page, page_js("return !!r.getElementById('intent');")), 10, every=0.3, what="start screen")
