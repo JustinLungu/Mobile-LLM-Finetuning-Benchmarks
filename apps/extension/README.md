@@ -14,9 +14,13 @@ You get a file called `wilo-extension-0.1.0.zip`.
 6. Optional: in the same window, fill in **What Wilo knows about you** (schedule, habits, how strict Wilo should be) and click **Save**.
 7. Open instagram.com and use it as usual.
 
-Works in Chrome on Windows, Mac and Linux, with 8 GB of RAM or more. While Wilo is loaded, Chrome uses about 2 GB more memory.
+Works in Chrome on Windows, Mac and Linux, with 8 GB of RAM or more. While Wilo is loaded, Chrome uses about 2–4 GB more memory, depending on the model.
 
-**Sending us your results:** click the Wilo icon → **Download log**, and send us the file. It contains what you told Wilo and what it answered, nothing else.
+**Trying it without waiting:** click the Wilo icon → **Time's up now**.
+
+**Please rate Wilo's replies** with 👍 or 👎. It tells us which answers to teach it.
+
+**Sending us your results:** click the Wilo icon → **Download log**, and send us the file. It contains your conversations with Wilo (what you said, what it answered and your ratings), the sites and times of your sessions, and your "What Wilo knows about you" note. Nothing else.
 
 ## For the team: build and test
 
@@ -28,9 +32,9 @@ uv run apps/extension/dev/check_extension.py   # end-to-end check in headless Ch
 
 `setup.py` takes Wilo's rules from `spec/bench_prompts.json` and the model links from `models/registry.yaml`, so the extension uses the same prompt and model files as the benchmarks and the training data. To load your working copy, use **Load unpacked** on `apps/extension/` itself. After editing files, click the reload icon on `chrome://extensions`.
 
-The check needs the GGUF files from `models/download.py`. It serves them locally, opens Instagram, goes through the start screen, jumps to time-up, asks Wilo for more time, and prints the reply and the log entry. Options: `--model llama3.2-3b`, `--reason "come on"`, `--flaky-mb 200` (the test server drops the download every 200 MB, to check resuming) and `--from-hf` (download from Hugging Face like testers).
+The check needs the GGUF files from `models/download.py`. It serves them locally, opens Instagram, goes through the start screen, jumps to time-up, asks Wilo for more time, and prints the reply and the log entry. Options: `--model llama3.2-3b`, `--say "come on"` (repeat `--say` for a conversation), `--intent`, `--next`, `--dark`, `--flaky-mb 200` (the test server drops the download every 200 MB, to check resuming) and `--from-hf` (download from Hugging Face like testers).
 
-To try another model file (e.g. our fine-tuned one): Wilo icon → **Use another model file**, then paste a link to a `.gguf` file under 2 GB.
+To try another model file (e.g. our fine-tuned one): Wilo icon → **Use another model file**, then paste a link to a `.gguf` file.
 
 ## How it works
 
@@ -42,12 +46,21 @@ To try another model file (e.g. our fine-tuned one): Wilo icon → **Use another
 | `wilo.js` | Wilo's prompt and reply format, identical to the training data |
 | `popup.*` | Model status, settings, the log |
 
-- **Each time-up request is one prompt** in exactly the training format: the situation (time, app, intent, agreed and used minutes, extensions, next event) plus what the user said. Wilo's JSON reply is forced to the schema, so it can't be malformed.
+- **Wilo sees the whole conversation of the session** (up to 12 earlier exchanges). Each user turn is the situation at that moment (time, app, intent, agreed and used minutes, extensions, next event) plus what the user said, in exactly the training format. Wilo's instructions are in `spec/wilo_prompt.json`, and its JSON reply is forced to the schema, so it can't be malformed.
+- **Each reply shows its decision** (✅ +10 min / 🤝 Offer: 5 min / ✋ No extra time) and 👍/👎 buttons.
+- **When a time-up conversation ends,** it's saved whole in the log with its outcome (granted, took offer, stayed anyway, done) and the minutes given. These are ready-made fine-tuning examples.
 - **Grant:** the session is extended.
 - **Counter-offer:** the user can take it or explain more.
-- **Decline:** the user can close the tab or ask again, after a wait that grows with each decline (10 s, 20 s, …). A small "stay anyway (5 min)" link appears after 20 s, because Wilo never blocks completely.
+- **Decline:** the user can close the tab or ask again. Asking again is immediate after the first decline, then there's a wait that grows with each further decline (10 s, 20 s, …). A small "stay anyway (5 min)" link appears after 20 s, because Wilo never blocks completely.
 - **When a session ends:** after no tab of that site has been open for 2 minutes.
 
-**Limits:**
-- **2 GB per file:** browsers can't load one file larger than this. Qwen 3.5 2B and Llama 3.2 3B work. Qwen 3.5 4B and Gemma 4 E2B would need to be split into parts first.
-- **Speed:** on a laptop CPU, a reply takes about 12–17 s with the base models. Chrome uses the GPU (WebGPU) when it can, which is faster.
+**Models:** all four load. The model is saved in 32 MB parts and handed to wllama as pieces on disk, so the browser's 2 GB limit on a single file doesn't apply. The table shows the same conversation ("come on", then "please", then "pleeease, just a bit more") with the base models, on a laptop CPU with no GPU:
+
+| Model | Download | Decisions | Reply time (CPU) |
+|---|---|---|---|
+| Qwen 3.5 2B | 1.28 GB | granted 10 min to "come on" ✗ | ~21 s |
+| Llama 3.2 3B | 2.02 GB | offered 2 min, then 1 min, then declined ✓ | 12–15 s |
+| Gemma 4 E2B | 3.11 GB | declined, declined ✓ | 17–29 s |
+| Qwen 3.5 4B | 2.74 GB | offered 3, then 2, then 1 min; clearest messages, but never said no | 24–54 s |
+
+Chrome uses the GPU (WebGPU) when it can, which is much faster.

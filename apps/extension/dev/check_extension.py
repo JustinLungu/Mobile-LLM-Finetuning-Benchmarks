@@ -1,7 +1,7 @@
 """End-to-end check of the Wilo extension in a real (headless) Chrome.
 
 Usage (from the repository root, after `uv run apps/extension/setup.py`):
-    uv run apps/extension/dev/check_extension.py [--model qwen3.5-2b] [--keep-open]
+    uv run apps/extension/dev/check_extension.py [--model qwen3.5-2b] [--say TEXT ...] [--intent TEXT] [--next TEXT] [--flaky-mb N] [--dark] [--from-hf]
 
 What it does:
 1. Serves the local GGUF files from models/ on http://127.0.0.1:8765, so the
@@ -191,8 +191,11 @@ def page_js(body):
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--model", default="qwen3.5-2b")
-    parser.add_argument("--reason", default=REASON, help="what the user tells Wilo at time-up")
+    parser.add_argument("--say", action="append", help="what the user tells Wilo at time-up; repeat for a conversation")
+    parser.add_argument("--intent", default="Reply to messages from my study group")
+    parser.add_argument("--next", default="Workout at 18:30", help="what's planned after ('' for nothing)")
     parser.add_argument("--flaky-mb", type=int, default=0, help="test server drops each download after this many MB")
+    parser.add_argument("--dark", action="store_true", help="show the pages in dark mode")
     parser.add_argument("--from-hf", action="store_true", help="download the default model from Hugging Face, as testers do")
     args = parser.parse_args()
 
@@ -233,13 +236,26 @@ def main() -> int:
         # Open Instagram: the start screen should appear.
         tab = chrome.call("Target.createTarget", {"url": "https://www.instagram.com/"})["targetId"]
         page = chrome.attach(tab)
+        if args.dark:
+            chrome.call("Emulation.setEmulatedMedia", {"features": [{"name": "prefers-color-scheme", "value": "dark"}]}, page)
+        out = REPO_ROOT / "results" / "extension"
+        out.mkdir(parents=True, exist_ok=True)
+        theme = "dark" if args.dark else "light"
+
+        def screenshot(name):
+            shot = chrome.call("Page.captureScreenshot", {"format": "png"}, page)
+            path = out / f"{name}_{theme}.png"
+            path.write_bytes(base64.b64decode(shot["data"]))
+            print(f"Screenshot: {path}")
         wait_for(lambda: chrome.evaluate(page, page_js("return !!r && host.style.display === 'block' && !!r.getElementById('intent');")), 60, what="start screen")
         print("Start screen shown")
-        chrome.evaluate(page, page_js("""
-            const set = (id, v) => { const el = r.getElementById(id); el.value = v; el.dispatchEvent(new Event('input')); };
-            set('intent', 'Reply to messages from my study group');
+        chrome.evaluate(page, page_js("r.querySelector('.chip[data-min=\"10\"]').click(); return true;"))
+        screenshot("start")
+        chrome.evaluate(page, page_js(f"""
+            const set = (id, v) => {{ const el = r.getElementById(id); el.value = v; el.dispatchEvent(new Event('input')); }};
+            set('intent', {json.dumps(args.intent)});
             r.querySelector('.chip[data-min="10"]').click();
-            set('next', 'Workout at 18:30');
+            set('next', {json.dumps(args.next)});
             r.getElementById('go').click();
             return true;"""))
         wait_for(lambda: chrome.evaluate(page, page_js("return host.style.display === 'none';")), 10, every=0.3, what="start screen to close")
@@ -252,27 +268,39 @@ def main() -> int:
             s.startedAt -= back; s.endsAt -= back; return chrome.storage.session.set({sessions}); })""")
         wait_for(lambda: chrome.evaluate(page, page_js("return !!r.getElementById('why');")), 15, every=0.3, what="time-up screen")
         print("Time-up screen shown")
-        chrome.evaluate(page, page_js(f"""
-            const why = r.getElementById('why'); why.value = {json.dumps(args.reason)}; why.dispatchEvent(new Event('input'));
-            r.getElementById('ask').click(); return true;"""))
-        t0 = time.time()
-        reply = wait_for(lambda: chrome.evaluate(page, page_js(
-            "const b = [...r.querySelectorAll('.bubble.wilo')].filter(b => !b.classList.contains('thinking')); "
-            "return b.length ? {message: b[b.length - 1].textContent, actions: r.getElementById('actions').innerText} : null;")),
-            180, every=0.5, what="Wilo's reply")
-        print(f"Wilo replied after {time.time() - t0:.1f} s: {reply['message']!r}")
-        print(f"Buttons shown: {reply['actions']!r}")
 
+        # Say each message in turn: one conversation, so Wilo should remember.
+        for n, text in enumerate(args.say or [REASON], 1):
+            # After a counter-offer, "Explain more instead" brings the text box back.
+            chrome.evaluate(page, page_js("const a = r.getElementById('argue'); if (a) a.click(); return true;"))
+            wait_for(lambda: chrome.evaluate(page, page_js("const a = r.getElementById('ask'); return !!a;")), 5, every=0.3, what="text box")
+            # A wait after repeated declines: let it run out.
+            wait_for(lambda: chrome.evaluate(page, page_js("return r.getElementById('wait').textContent === '';")), 120, every=0.5, what="wait to end")
+            before = chrome.evaluate(page, page_js("return r.querySelectorAll('.bubble.wilo:not(.thinking)').length;"))
+            chrome.evaluate(page, page_js(f"""
+                const why = r.getElementById('why'); why.value = {json.dumps(text)}; why.dispatchEvent(new Event('input'));
+                r.getElementById('ask').click(); return true;"""))
+            t0 = time.time()
+            reply = wait_for(lambda: chrome.evaluate(page, page_js(
+                f"const b = [...r.querySelectorAll('.bubble.wilo:not(.thinking)')]; "
+                f"return b.length > {before} ? {{message: b[b.length - 1].firstChild.textContent, "
+                f"tag: b[b.length - 1].querySelector('.tag').textContent, actions: r.getElementById('actions').innerText}} : null;")),
+                180, every=0.5, what="Wilo's reply")
+            print(f"\n[{n}] User: {text}\n    Wilo ({time.time() - t0:.1f} s, {reply['tag']}): {reply['message']}")
+            print(f"    Buttons: {reply['actions']!r}")
+            if reply["tag"].startswith("✅"):
+                break
+
+        screenshot("time_up")
         log = chrome.evaluate(sw, "chrome.storage.local.get('log').then(x => x.log)")
-        negotiation = [e for e in log if e["kind"] == "negotiation"][-1]
-        print("Log entry:\n" + json.dumps(negotiation, indent=2, ensure_ascii=False))
-
-        shot = chrome.call("Page.captureScreenshot", {"format": "png"}, page)
-        out = REPO_ROOT / "results" / "extension"
-        out.mkdir(parents=True, exist_ok=True)
-        (out / "time_up.png").write_bytes(base64.b64decode(shot["data"]))
-        print(f"Screenshot: {out / 'time_up.png'}")
-        ok = negotiation.get("error") is None
+        negotiations = [e for e in log if e["kind"] == "negotiation"]
+        print(f"\nLast reply in the log (Wilo saw {negotiations[-1]['historyTurns']} earlier exchanges):")
+        print(json.dumps(negotiations[-1]["reply"], indent=2, ensure_ascii=False))
+        conversations = [e for e in log if e["kind"] == "conversation"]
+        if conversations:
+            c = conversations[-1]
+            print(f"Conversation saved: {len(c['turns'])} exchanges, outcome {c['outcome']!r}, {c['minutes']} min")
+        ok = all(e.get("error") is None for e in negotiations)
     finally:
         errors = [line for line in chrome.console if "EXCEPTION" in line or "rror" in line]
         if errors:
