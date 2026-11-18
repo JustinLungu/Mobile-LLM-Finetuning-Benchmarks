@@ -56,7 +56,7 @@ async function updateSession(site, change) {
 
 async function appendLog(entry) {
   const { log = [] } = await chrome.storage.local.get("log");
-  log.push({ at: new Date().toISOString(), ...entry });
+  log.push({ at: new Date().toISOString(), version: chrome.runtime.getManifest().version, ...entry });
   await chrome.storage.local.set({ log: log.slice(-LOG_LIMIT) });
 }
 

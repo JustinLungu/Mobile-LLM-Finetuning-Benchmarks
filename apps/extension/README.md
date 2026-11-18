@@ -4,22 +4,29 @@ The Wilo prototype: a Chrome extension that asks what you're opening Instagram (
 
 ## For testers: install Wilo
 
-You get a file called `wilo-extension-0.1.0.zip`.
+You get a file called `wilo-extension-0.2.0.zip`. Use **Google Chrome** (Edge and Brave should work too; Safari and Firefox don't), with 8 GB of RAM or more and good Wi-Fi for the first start.
 
 1. Unzip it. You get a folder `wilo-extension`. Keep it somewhere permanent (e.g. Documents): Chrome loads Wilo from this folder every time.
 2. In Chrome, open `chrome://extensions`.
 3. Turn on **Developer mode** (top right).
 4. Click **Load unpacked** and pick the `wilo-extension` folder.
-5. Click the puzzle icon in the toolbar and pin **Wilo**. Click it: the first time, Wilo downloads its model (2 GB). This takes a few minutes on good Wi-Fi. If you close Chrome, it continues where it stopped.
-6. Open instagram.com and use it as usual. The first time, Wilo offers 4 quick questions to get to know you (tap an answer or type your own; you can skip). Now and then it asks one more on the start screen, which is always optional.
+5. Click the puzzle icon in the toolbar and pin **Wilo**. Click it: the first time, Wilo downloads its model (2 GB). This takes a few minutes. If you close Chrome, it continues where it stopped. Wait for **✅ Wilo is ready**.
+6. Open instagram.com (or YouTube, TikTok, X, Reddit, Facebook) and use it as usual.
 
-Works in Chrome on Windows, Mac and Linux, with 8 GB of RAM or more. While Wilo is loaded, Chrome uses about 2–4 GB more memory, depending on the model.
+**What happens:**
+- **When you open one of these sites,** Wilo asks what you're there for and for how long. The first time, it offers 4 quick questions to get to know you; you can skip them.
+- **When your time is up,** you can ask Wilo for more. Tell it why, as you would tell a friend. It may say yes, offer less, or say no. You can always explain more, or click **I'm done**.
+- **Now and then,** Wilo asks one optional question on the start screen, to get to know you better.
+- **Free time:** under **Set up free time** on the start screen, choose times when you can scroll freely, without Wilo asking anything.
 
-**Trying it without waiting:** click the Wilo icon → **For the study** → **Time's up now**.
+**Please:**
+- Use it normally for a few days, on the sites you actually use.
+- Rate Wilo's replies with 👍 or 👎. That tells us which answers to teach it.
+- Expect Wilo to take 5–25 seconds to answer, depending on your computer. It's thinking on your computer, not in the cloud.
 
-**Please rate Wilo's replies** with 👍 or 👎. It tells us which answers to teach it.
+**Sending us your results:** your conversations are saved on your computer as you go; nothing is sent anywhere. At the end of the study, click the Wilo icon → **For the study** → **Save my conversations for the Wilo team**, and send us the file from your Downloads folder. It contains what you told Wilo and what it answered, your ratings, your answers to its questions and free-time settings, and when you used which site and for how long. Nothing else: Wilo never sees what you look at on these sites. Before sending, you can open the file and read it, or delete it via **Delete my conversations**.
 
-**Sending us your results:** your conversations are saved on your computer as you go. At the end of the study, click the Wilo icon → **For the study** → **Save my conversations for the Wilo team**, and send us the file from your Downloads folder. It contains your conversations with Wilo (what you said, what it answered and your ratings), the sites and times of your sessions, and your "What Wilo knows about you" note. Nothing else.
+**If something goes wrong:** open `chrome://extensions`, click the reload icon on the Wilo card, and tell us what happened (a screenshot helps).
 
 ## For the team: build and test
 
