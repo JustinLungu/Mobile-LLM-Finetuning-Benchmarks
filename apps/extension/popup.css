@@ -19,3 +19,4 @@ button { font: inherit; border-radius: 8px; padding: 7px 12px; border: 1px solid
 button.main { width: 100%; background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
 .row { display: flex; gap: 8px; }
 .row button { flex: 1; }
+.note-box { white-space: pre-wrap; font: inherit; background: var(--field); border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; margin: 4px 0; }

@@ -6,11 +6,10 @@
   if (window.top !== window) return; // never inside frames
 
   // After the extension is reloaded or updated, scripts already running in open
-  // tabs lose their connection ("Extension context invalidated"). background.js
-  // then injects the new version into those tabs, and the newest copy always
-  // takes over: it switches the previous one off and removes its overlay.
-  // (Chrome declares each page's content script once, so a previous copy only
-  // exists after such an update.)
+  // tabs lose their connection ("Extension context invalidated") and stop
+  // themselves (their connection checks fail). background.js then adds the new
+  // version to those tabs; it removes any overlay an old copy left behind. It
+  // never calls into the old copy: Chrome may refuse to run that code.
   const connected = () => {
     try {
       return !!chrome.runtime.id;
@@ -18,12 +17,6 @@
       return false;
     }
   };
-  try {
-    if (window.__wilo) window.__wilo.dispose();
-  } catch {
-    // The old copy belongs to the unloaded version, so Chrome may refuse to run
-    // its code. It stops itself anyway: its connection checks fail.
-  }
   document.querySelectorAll("[data-wilo-overlay]").forEach((e) => e.remove());
 
   const site = location.hostname;
@@ -120,6 +113,15 @@
       .bubble.wilo { align-self: flex-start; background: var(--bubble); color: var(--text); border-bottom-left-radius: 4px; }
       .bubble.thinking { color: var(--muted); font-style: italic; }
       .note { color: var(--muted); font-size: 13px; margin-top: 8px; }
+      .question { margin: 10px 0 14px; padding: 12px; border-radius: 12px; background: var(--bubble); }
+      .question .note { margin: 6px 0 0; }
+      .qhead { font-size: 12px; font-weight: 600; letter-spacing: 0.03em; text-transform: uppercase; color: var(--muted); margin-bottom: 4px; }
+      .qtext { margin-bottom: 8px; }
+      .own { display: flex; gap: 6px; margin-top: 8px; }
+      .own input { flex: 1; padding: 6px 9px; }
+      .own-send { font: inherit; font-weight: 600; border: 0; border-radius: 10px; padding: 6px 12px; background: var(--accent); color: var(--on-accent); cursor: pointer; }
+      .own-send:disabled { opacity: 0.4; cursor: default; }
+      .chip.small { padding: 4px 11px; font-size: 13px; }
       .meta { display: flex; align-items: center; gap: 4px; margin-top: 6px; font-size: 12px; }
       .tag { font-weight: 600; color: var(--sub); margin-right: auto; }
       .rate { background: none; border: 0; cursor: pointer; font-size: 13px; padding: 0 2px; opacity: 0.45; }
@@ -146,7 +148,6 @@
     clearInterval(checkIn);
     host.remove();
   }
-  window.__wilo = { connected, dispose };
 
   function show(newMode) {
     if (!connected()) return dispose(); // a disconnected copy must not cover the page
@@ -173,10 +174,110 @@
 
   // --- Start: declare an intent and a time ----------------------------------
 
-  function showStart() {
+  // The first time ever: offer three tap questions so Wilo knows a bit about
+  // the user. Skippable; then the normal start screen.
+  function showOnboarding(questions, then) {
+    show("start");
+    const answers = {};
+    card.innerHTML = `
+      <h1>Hi, I'm Wilo 👋</h1>
+      <p class="sub">I help you use ${esc(appName())} on purpose. Want me to get to know you a bit first? It's 3 quick questions.</p>
+      <div class="row">
+        <button class="alt" id="skip">Not now</button>
+        <button class="main" id="sure">Sure</button>
+      </div>`;
+    root.getElementById("skip").addEventListener("click", () => {
+      send("onboarding", { answers: null });
+      then();
+    });
+    root.getElementById("sure").addEventListener("click", () => ask(0));
+    function ask(i) {
+      if (i >= questions.length) {
+        send("onboarding", { answers });
+        then();
+        return;
+      }
+      const q = questions[i];
+      card.innerHTML = `
+        <p class="sub">Let's get to know each other a bit · ${i + 1} of ${questions.length}</p>
+        <h1>${esc(q.text)}</h1>
+        <div class="chips" style="margin-top: 14px;">
+          ${q.options.map((o, n) => `<button class="chip" data-n="${n}">${esc(o)}</button>`).join("")}
+        </div>
+        ${ownWords("Or in your own words…")}
+        <button class="link" id="skip-one">Skip this one</button>`;
+      root.querySelectorAll(".chip").forEach((chip) =>
+        chip.addEventListener("click", () => {
+          answers[q.key] = q.options[Number(chip.dataset.n)];
+          ask(i + 1);
+        }),
+      );
+      wireOwnWords(card, (text) => {
+        answers[q.key] = text;
+        ask(i + 1);
+      });
+      root.getElementById("skip-one").addEventListener("click", () => ask(i + 1));
+    }
+  }
+
+  // A text box to answer in one's own words, with a send button.
+  const ownWords = (placeholder) => `
+    <div class="own">
+      <input class="own-text" maxlength="300" placeholder="${esc(placeholder)}" />
+      <button class="own-send" disabled>Send</button>
+    </div>`;
+
+  function wireOwnWords(box, onSend) {
+    const input = box.querySelector(".own-text");
+    const button = box.querySelector(".own-send");
+    input.addEventListener("input", () => (button.disabled = !input.value.trim()));
+    const sendIt = () => input.value.trim() && onSend(input.value.trim());
+    button.addEventListener("click", sendIt);
+    input.addEventListener("keydown", (e) => e.key === "Enter" && sendIt());
+  }
+
+  // An optional question at the top of the start screen, so Wilo keeps
+  // learning about the user: tap an answer or say more in their own words,
+  // skip, or turn questions off. Starting never depends on it.
+  function questionCard(q) {
+    const box = root.getElementById("question");
+    if (!q || !box) return;
+    send("question-shown");
+    box.innerHTML = `
+      <div class="question">
+        <div class="qhead">Let's get to know each other a bit</div>
+        <div class="qtext">${esc(q.text)}</div>
+        ${q.options.length ? `<div class="chips">${q.options.map((o, n) => `<button class="chip small" data-n="${n}">${esc(o.label)}</button>`).join("")}</div>` : ""}
+        ${ownWords(q.options.length ? "Or tell me more in your own words…" : "Tell me in your own words…")}
+        <div class="note"><button class="link" id="q-skip">Skip</button> · <button class="link" id="q-never">Don't ask me questions</button></div>
+      </div>`;
+    const done = (text) => (box.innerHTML = `<div class="question note">${text}</div>`);
+    box.querySelectorAll(".chip").forEach((chip) =>
+      chip.addEventListener("click", () => {
+        send("answer", { question: q, option: Number(chip.dataset.n) });
+        done("Thanks, I'll remember that.");
+      }),
+    );
+    wireOwnWords(box, (text) => {
+      send("answer", { question: q, option: -1, text });
+      done("Thanks, I'll remember that.");
+    });
+    root.getElementById("q-skip").addEventListener("click", () => {
+      send("answer", { question: q, option: -1 });
+      done("No problem.");
+    });
+    root.getElementById("q-never").addEventListener("click", () => {
+      send("no-questions");
+      done("Got it, no more questions.");
+    });
+  }
+
+  function showStart(extra = {}) {
+    if (extra.onboarding) return showOnboarding(extra.onboarding, () => showStart({}));
     show("start");
     card.innerHTML = `
       <h1>Hi, I'm Wilo 👋</h1>
+      <div id="question"></div>
       <p class="sub">Before you dive into ${esc(appName())}: what's the plan?</p>
       <label for="intent">What are you here for?</label>
       <input id="intent" maxlength="200" placeholder="e.g. reply to my study group" />
@@ -189,6 +290,7 @@
       <input id="next" maxlength="200" placeholder="e.g. dinner at 19:30" />
       <div class="row"><button class="main" id="go" disabled>Start</button></div>
       <div class="err" id="err"></div>`;
+    questionCard(extra.question);
     let minutes = null;
     const go = root.getElementById("go");
     const intent = root.getElementById("intent");
@@ -400,12 +502,18 @@
     if (!res) return; // no answer: extension reloaded, this old script is disconnected
     session = res.session;
     if (!session) {
-      if (mode !== "start") showStart();
+      if (mode !== "start") showStart({ onboarding: res.onboarding, question: res.question });
       return;
     }
     if (mode === "start") hide(); // started from another tab
     schedule();
   }
+
+  // background.js asks this before adding Wilo to an open tab, so a tab never
+  // gets two copies.
+  chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
+    if (msg && msg.type === "wilo-ping" && !disposed) reply({ alive: true });
+  });
 
   // Another tab started, extended or ended this site's session.
   chrome.storage.onChanged.addListener((changes, area) => {

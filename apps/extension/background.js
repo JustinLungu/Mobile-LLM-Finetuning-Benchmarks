@@ -8,6 +8,7 @@
 
 import { CONFIG } from "./generated/config.js";
 import { REPLY_SCHEMA, SITES, modelByKey, situationText, systemPrompt } from "./wilo.js";
+import { ONBOARDING, memoryNote, nextQuestion, recordAnswer } from "./memory.js";
 
 // A session ends when no tab of the site has been open for this long.
 const GONE_AFTER_MS = 2 * 60 * 1000;
@@ -22,7 +23,24 @@ chrome.storage.session.setAccessLevel({ accessLevel: "TRUSTED_AND_UNTRUSTED_CONT
 
 async function getSettings() {
   const { settings } = await chrome.storage.local.get("settings");
-  return { modelKey: CONFIG.defaultModel, customModelUrl: "", memoryNote: "", ...(settings || {}) };
+  return { modelKey: CONFIG.defaultModel, customModelUrl: "", ...(settings || {}) };
+}
+
+// What Wilo has learned about the user (memory.js): onboarding answers, facts
+// from check-in questions, and which questions were asked.
+async function getProfile() {
+  const { profile } = await chrome.storage.local.get("profile");
+  return { onboarding: { offered: false, answers: {} }, facts: [], asked: {}, ...(profile || {}) };
+}
+
+async function getLog() {
+  const { log = [] } = await chrome.storage.local.get("log");
+  return log;
+}
+
+// The memory note Wilo reads, written from the profile and the log.
+async function currentNote() {
+  return memoryNote(await getProfile(), await getLog());
 }
 
 async function getSessions() {
@@ -66,12 +84,11 @@ async function modelToLoad() {
 }
 
 async function sendLoad() {
-  const settings = await getSettings();
   return chrome.runtime.sendMessage({
     target: "offscreen",
     type: "load",
     model: await modelToLoad(),
-    system: systemPrompt(settings.memoryNote),
+    system: systemPrompt(await currentNote()),
     max_tokens: CONFIG.maxTokens,
   });
 }
@@ -115,8 +132,7 @@ async function askWilo(site, userSays) {
   const sessions = await getSessions();
   const session = sessions[site];
   if (!session) return { error: "no session" };
-  const settings = await getSettings();
-  const system = systemPrompt(settings.memoryNote);
+  const system = systemPrompt(await currentNote());
   const user = situationText(session, userSays);
   // Earlier exchanges, in the same format: each user turn is the situation at
   // that moment plus what they said, each Wilo turn is its JSON reply.
@@ -179,6 +195,26 @@ async function extend(site, minutes) {
   });
 }
 
+// A session is over (the user clicked "I'm done", or left the site): record
+// how it went. Wilo learns typical session lengths and patterns from these.
+async function endSession(site, s, reason) {
+  const started = new Date(s.startedAt);
+  await appendLog({
+    kind: "session-end",
+    site,
+    app: s.app,
+    intent: s.intent,
+    next: s.next,
+    agreedMin: s.agreedMin,
+    usedMin: Math.max(0, Math.round(((reason === "done" ? Date.now() : s.lastSeen) - s.startedAt) / 60000)),
+    extensions: s.extensions,
+    startHour: started.getHours(),
+    weekday: started.getDay(),
+    reason,
+  });
+  await updateSession(site, () => undefined);
+}
+
 // One time-up conversation is over: save it whole, with how it ended, as a
 // ready-made example for fine-tuning (testers send us these logs).
 async function closeConversation(site, outcome, minutes = 0) {
@@ -187,7 +223,7 @@ async function closeConversation(site, outcome, minutes = 0) {
   if (!s) return;
   const turns = s.turns.slice(s.conversationFrom);
   if (turns.length) {
-    const settings = await getSettings();
+    const note = await currentNote();
     await appendLog({
       kind: "conversation",
       site,
@@ -198,8 +234,8 @@ async function closeConversation(site, outcome, minutes = 0) {
       usedMin: Math.round((Date.now() - s.startedAt) / 60000),
       outcome, // granted, took offer, stayed anyway, done
       minutes,
-      memoryNote: settings.memoryNote,
-      system: systemPrompt(settings.memoryNote),
+      memoryNote: note,
+      system: systemPrompt(note),
       turns: turns.map(({ id, says, situation, raw, reply, error, model }) => ({ id, says, situation, raw, reply, error, model })),
     });
   }
@@ -221,15 +257,66 @@ const handlers = {
     return {};
   },
 
-  // A content script loaded on a watched site, or checks in.
+  // A content script loaded on a watched site, or checks in. Without a session
+  // the start screen shows, with the onboarding (first time only) or at most
+  // one optional check-in question.
   async status(msg) {
     await ensureOffscreen();
     const now = Date.now();
-    const session = await updateSession(msg.site, (s) => {
-      if (s && now - s.lastSeen > GONE_AFTER_MS) return undefined; // left long enough ago: new session
-      return s && { ...s, lastSeen: now };
-    });
-    return { session: session || null, now };
+    const before = (await getSessions())[msg.site];
+    if (before && now - before.lastSeen > GONE_AFTER_MS) await endSession(msg.site, before, "left"); // left long enough ago: new session
+    const session = await updateSession(msg.site, (s) => s && { ...s, lastSeen: now });
+    if (session) return { session, now };
+    const profile = await getProfile();
+    const onboarding = profile.onboarding.offered ? null : ONBOARDING;
+    const question = onboarding ? null : nextQuestion(profile, await getLog(), { app: SITES[msg.site] || msg.site, now: new Date() });
+    return { session: null, now, onboarding, question };
+  },
+
+  // First start screen: the three tap questions, or null if skipped.
+  async onboarding(msg) {
+    const answers = msg.answers && typeof msg.answers === "object" ? msg.answers : {};
+    const profile = await getProfile();
+    await chrome.storage.local.set({ profile: { ...profile, onboarding: { offered: true, answers } } });
+    await appendLog({ kind: "onboarding", answers, skipped: !msg.answers });
+    return {};
+  },
+
+  // A check-in question was shown: that's today's one.
+  async "question-shown"() {
+    const profile = await getProfile();
+    await chrome.storage.local.set({ profile: { ...profile, lastQuestionDay: new Date().toDateString() } });
+    return {};
+  },
+
+  // Answered (option index) or skipped (-1).
+  async answer(msg) {
+    const q = msg.question;
+    if (!q || !q.key || !Array.isArray(q.options)) return {};
+    const text = String(msg.text || "").trim().slice(0, 300);
+    const profile = recordAnswer(await getProfile(), q, Number(msg.option), text);
+    await chrome.storage.local.set({ profile });
+    const option = q.options[Number(msg.option)];
+    await appendLog({ kind: "question", key: q.key, question: q.text, answer: text || (option ? option.label : "skipped"), typed: !!text });
+    return {};
+  },
+
+  async "no-questions"() {
+    const profile = await getProfile();
+    await chrome.storage.local.set({ profile: { ...profile, noQuestions: true } });
+    await appendLog({ kind: "question", answer: "don't ask me questions" });
+    return {};
+  },
+
+  // Popup: what Wilo knows, and starting over.
+  async "memory-note"() {
+    return { note: await currentNote() };
+  },
+
+  async "redo-questions"() {
+    const profile = await getProfile();
+    await chrome.storage.local.set({ profile: { ...profile, onboarding: { offered: false, answers: {} }, noQuestions: false } });
+    return {};
   },
 
   async start(msg) {
@@ -248,7 +335,8 @@ const handlers = {
       turns: [], // every exchange with Wilo in this session
       conversationFrom: 0, // where the current time-up conversation starts in turns
     }));
-    await appendLog({ kind: "start", site: msg.site, app: session.app, intent: session.intent, minutes, next: session.next });
+    const d = new Date(now);
+    await appendLog({ kind: "start", site: msg.site, app: session.app, intent: session.intent, minutes, next: session.next, hour: d.getHours(), weekday: d.getDay() });
     return { session };
   },
 
@@ -272,8 +360,8 @@ const handlers = {
 
   async done(msg, sender) {
     await closeConversation(msg.site, "done");
-    await updateSession(msg.site, () => undefined);
-    await appendLog({ kind: "done", site: msg.site });
+    const s = (await getSessions())[msg.site];
+    if (s) await endSession(msg.site, s, "done");
     if (sender.tab) await chrome.tabs.remove(sender.tab.id);
     return {};
   },
@@ -313,28 +401,46 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 });
 
 // Chrome only adds content scripts to pages opened after the extension is
-// installed or updated. Add Wilo to tabs that are already open on watched
-// sites, so nobody has to reload them (the new copy replaces an old one).
-async function injectIntoOpenTabs() {
-  const { content_scripts } = chrome.runtime.getManifest();
-  const tabs = await chrome.tabs.query({ url: content_scripts[0].matches });
-  for (const tab of tabs) {
-    chrome.scripting
-      .executeScript({ target: { tabId: tab.id }, files: content_scripts[0].js })
-      .catch((e) => console.warn(`[wilo] couldn't add Wilo to ${tab.url}: ${e.message}`));
+// installed or updated. Add Wilo to tabs already open on watched sites, so
+// nobody has to reload them. Right after an update Chrome is still tearing
+// down the old version's scripts, and a copy added at that moment can be torn
+// down with it ("Extension context invalidated"), however long we wait first.
+// So: ask the tab whether a working copy is there, add one only if not, and
+// check again a few seconds later.
+const WATCHED = chrome.runtime.getManifest().content_scripts[0];
+
+async function hasWilo(tabId) {
+  try {
+    const answer = await chrome.tabs.sendMessage(tabId, { type: "wilo-ping" });
+    return !!(answer && answer.alive);
+  } catch {
+    return false; // nothing listening in that tab
   }
 }
+
+async function ensureWilo(tabId) {
+  if (await hasWilo(tabId)) return;
+  await chrome.scripting.executeScript({ target: { tabId }, files: WATCHED.js }).catch(() => {});
+}
+
+async function ensureWiloInOpenTabs() {
+  const tabs = await chrome.tabs.query({ url: WATCHED.matches });
+  await Promise.all(tabs.map((tab) => ensureWilo(tab.id)));
+}
+
+// Also when the user switches to a watched tab: covers any tab missed above.
+chrome.tabs.onActivated.addListener(async ({ tabId }) => {
+  const [match] = await chrome.tabs.query({ url: WATCHED.matches }).then((tabs) => tabs.filter((t) => t.id === tabId));
+  if (match) ensureWilo(tabId);
+});
 
 // Load the model as soon as Chrome starts, so the first reply is quick.
 chrome.runtime.onStartup.addListener(() => ensureOffscreen());
 chrome.runtime.onInstalled.addListener((details) => {
   console.log(`[wilo] installed (${details.reason})`);
   restartModel();
-  // Right after a reload Chrome is still tearing down the old version's scripts
-  // in open tabs, and a copy injected at that moment is torn down with them
-  // ("Extension context invalidated"). A short wait avoids that.
-  setTimeout(injectIntoOpenTabs, 1500);
+  for (const delay of [1500, 5000, 12000]) setTimeout(ensureWiloInOpenTabs, delay);
 });
 
 // For debugging from the service worker's DevTools console (and dev/check_extension.py).
-globalThis.wilo = { restartModel, handlers };
+globalThis.wilo = { restartModel, handlers, currentNote, getProfile, memoryNote, nextQuestion };

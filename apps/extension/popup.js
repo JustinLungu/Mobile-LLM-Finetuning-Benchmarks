@@ -5,7 +5,7 @@ const gb = (bytes) => (bytes / 1e9).toFixed(2) + " GB";
 
 async function settings() {
   const { settings } = await chrome.storage.local.get("settings");
-  return { modelKey: CONFIG.defaultModel, customModelUrl: "", memoryNote: "", ...(settings || {}) };
+  return { modelKey: CONFIG.defaultModel, customModelUrl: "", ...(settings || {}) };
 }
 
 async function saveSettings(change) {
@@ -67,7 +67,6 @@ async function init() {
   for (const m of CONFIG.models) $("model").add(new Option(`${m.name} (${gb(m.sizeBytes)})`, m.key));
   $("model").value = s.modelKey;
   $("custom-url").value = s.customModelUrl;
-  $("memory").value = s.memoryNote;
 
   const { model, sessions } = await chrome.storage.session.get(["model", "sessions"]);
   showModel(model);
@@ -77,17 +76,17 @@ async function init() {
     if (area === "session" && changes.model) showModel(changes.model.newValue);
     if (area === "session" && changes.sessions) showSessions(changes.sessions.newValue);
     if (area === "local" && changes.log) showLogCount();
+    if (area === "local" && (changes.profile || changes.log)) showNote();
   });
 
-  // The note saves itself shortly after typing stops.
-  let pending = null;
-  $("memory").addEventListener("input", () => {
-    $("memory-saved").textContent = "Saving…";
-    clearTimeout(pending);
-    pending = setTimeout(async () => {
-      await saveSettings({ memoryNote: $("memory").value.trim() });
-      $("memory-saved").textContent = "Saved ✓";
-    }, 600);
+  const showNote = async () => {
+    const res = await chrome.runtime.sendMessage({ type: "memory-note" });
+    $("note").textContent = (res && res.note) || "Nothing yet.";
+  };
+  showNote();
+  $("redo").addEventListener("click", async () => {
+    await chrome.runtime.sendMessage({ type: "redo-questions" });
+    $("redo").textContent = "Done: Wilo will ask on your next start screen.";
   });
 
   $("apply-model").addEventListener("click", async () => {
