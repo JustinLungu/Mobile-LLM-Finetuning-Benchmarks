@@ -99,6 +99,11 @@
         border-radius: 999px; padding: 6px 14px; cursor: pointer; font: inherit;
       }
       .chip.on { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+      .custom-box { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--accent); border-radius: 999px; padding: 2px 12px 2px 4px; background: var(--field); }
+      .custom-box[hidden] { display: none; }
+      .custom-box input { width: 56px; border: 0; background: transparent; padding: 4px 6px; text-align: right; }
+      .custom-box input:focus { outline: none; }
+      .custom-box span { color: var(--muted); }
       .row { display: flex; gap: 8px; margin-top: 16px; flex-wrap: wrap; }
       button.main, button.alt {
         flex: 1; font: inherit; font-weight: 600; border-radius: 10px; padding: 10px 14px; cursor: pointer; border: 0;
@@ -284,7 +289,8 @@
       <label>How long do you need?</label>
       <div class="chips" id="chips">
         ${[5, 10, 15, 30].map((m) => `<button class="chip" data-min="${m}">${m} min</button>`).join("")}
-        <input id="custom" type="number" min="1" max="240" placeholder="other" style="width: 90px;" />
+        <button class="chip" id="custom-chip">Custom</button>
+        <span class="custom-box" id="custom-box" hidden><input id="custom" type="number" min="1" max="240" placeholder="20" /><span>min</span></span>
       </div>
       <label for="next">Anything planned after? <span class="optional">(optional)</span></label>
       <input id="next" maxlength="200" placeholder="e.g. dinner at 19:30" />
@@ -296,17 +302,25 @@
     const intent = root.getElementById("intent");
     const custom = root.getElementById("custom");
     const refresh = () => (go.disabled = !(intent.value.trim() && minutes > 0));
+    const customBox = root.getElementById("custom-box");
     root.getElementById("chips").addEventListener("click", (e) => {
       const chip = e.target.closest(".chip");
       if (!chip) return;
-      minutes = Number(chip.dataset.min);
-      custom.value = "";
       root.querySelectorAll(".chip").forEach((c) => c.classList.toggle("on", c === chip));
+      if (chip.id === "custom-chip") {
+        // Custom: a minutes box appears next to the button.
+        customBox.hidden = false;
+        minutes = Math.round(Number(custom.value)) || null;
+        custom.focus();
+      } else {
+        customBox.hidden = true;
+        minutes = Number(chip.dataset.min);
+      }
       refresh();
     });
     custom.addEventListener("input", () => {
-      minutes = Number(custom.value) || null;
-      root.querySelectorAll(".chip").forEach((c) => c.classList.remove("on"));
+      minutes = Math.round(Number(custom.value)) || null;
+      if (minutes) minutes = Math.max(1, Math.min(240, minutes));
       refresh();
     });
     intent.addEventListener("input", refresh);

@@ -65,3 +65,24 @@ export const REPLY_SCHEMA = {
 export function modelByKey(key) {
   return CONFIG.models.find((m) => m.key === key) || CONFIG.models.find((m) => m.key === CONFIG.defaultModel);
 }
+
+// Safety net until the model is fine-tuned: the base models sometimes offer far
+// too much (30 min on a 1-minute plan). The first extension is at most the
+// agreed time (counted as 5 to 30 minutes), each further one half of the
+// previous limit, never under 2 minutes.
+export function maxExtension(session) {
+  const base = Math.max(5, Math.min(30, session.agreedMin));
+  return Math.max(2, Math.round(base / 2 ** session.extensions));
+}
+
+// Cap a reply's minutes; if its message names the old number, fix that too.
+export function capReply(reply, session) {
+  const limit = maxExtension(session);
+  if (reply.decision === "decline" || reply.minutes <= limit) return { reply, capped: false };
+  const said = new RegExp(`\\b${reply.minutes}(\\s*(more\\s+)?(min|mins|minutes)\\b)`, "gi");
+  return {
+    reply: { ...reply, minutes: limit, message: reply.message.replace(said, `${limit}$1`) },
+    capped: true,
+    modelMinutes: reply.minutes,
+  };
+}

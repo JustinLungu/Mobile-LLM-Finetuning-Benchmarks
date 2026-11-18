@@ -7,7 +7,7 @@
 //   storage.local    settings (model, memory note) and the log. Kept.
 
 import { CONFIG } from "./generated/config.js";
-import { REPLY_SCHEMA, SITES, modelByKey, situationText, systemPrompt } from "./wilo.js";
+import { REPLY_SCHEMA, SITES, capReply, modelByKey, situationText, systemPrompt } from "./wilo.js";
 import { ONBOARDING, memoryNote, nextQuestion, recordAnswer } from "./memory.js";
 
 // A session ends when no tab of the site has been open for this long.
@@ -162,13 +162,18 @@ async function askWilo(site, userSays) {
     }
   }
 
+  // Safety net: limit how many minutes Wilo can give (see capReply).
+  const capped = capReply(reply, session);
+  reply = capped.reply;
+
   const turn = {
     id: crypto.randomUUID(),
     at: new Date().toISOString(),
     says: userSays,
     situation: user,
-    raw: error ? null : result.raw,
-    reply,
+    raw: error ? null : result.raw, // what the model said
+    reply, // what was applied (after the safety net)
+    cappedFrom: capped.capped ? capped.modelMinutes : undefined,
     error,
     model: result && result.model,
     ms: result && result.ms,
@@ -443,4 +448,4 @@ chrome.runtime.onInstalled.addListener((details) => {
 });
 
 // For debugging from the service worker's DevTools console (and dev/check_extension.py).
-globalThis.wilo = { restartModel, handlers, currentNote, getProfile, memoryNote, nextQuestion };
+globalThis.wilo = { restartModel, handlers, currentNote, getProfile, memoryNote, nextQuestion, capReply };
