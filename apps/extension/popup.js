@@ -77,6 +77,7 @@ async function init() {
     if (area === "session" && changes.sessions) showSessions(changes.sessions.newValue);
     if (area === "local" && changes.log) showLogCount();
     if (area === "local" && (changes.profile || changes.log)) showNote();
+    if (area === "local" && changes.profile) showRules();
   });
 
   const showNote = async () => {
@@ -99,6 +100,38 @@ async function init() {
     await saveSettings(change);
     await chrome.runtime.sendMessage({ type: "restart-model" });
     $("model-saved").textContent = "Switching model…";
+  });
+
+  // The user's free-time rules (stored in the profile, read by Wilo).
+  const getProfile = async () => (await chrome.storage.local.get("profile")).profile || {};
+  async function showRules() {
+    const rules = (await getProfile()).rules || [];
+    $("rules").innerHTML = "";
+    if (!rules.length) $("rules").innerHTML = '<p class="hint">No rules yet.</p>';
+    rules.forEach((r, i) => {
+      const row = document.createElement("div");
+      row.className = "rule";
+      const label = document.createElement("span");
+      label.textContent = `${r.days[0].toUpperCase() + r.days.slice(1)}, ${r.from}–${r.to}` + (r.why ? ` (${r.why})` : "");
+      row.appendChild(label);
+      const del = document.createElement("button");
+      del.textContent = "Remove";
+      del.addEventListener("click", async () => {
+        const p = await getProfile();
+        p.rules = (p.rules || []).filter((_, j) => j !== i);
+        await chrome.storage.local.set({ profile: p });
+        showRules();
+      });
+      row.appendChild(del);
+      $("rules").appendChild(row);
+    });
+  }
+  showRules();
+  $("rule-add").addEventListener("click", async () => {
+    const rule = { days: $("rule-days").value, from: $("rule-from").value, to: $("rule-to").value, why: $("rule-why").value };
+    const res = await chrome.runtime.sendMessage({ type: "add-rule", rule, from: "popup" });
+    if (res && res.rule) $("rule-why").value = "";
+    showRules();
   });
 
   $("time-up").addEventListener("click", async () => {

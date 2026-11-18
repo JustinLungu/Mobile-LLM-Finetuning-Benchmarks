@@ -8,7 +8,7 @@
 
 import { CONFIG } from "./generated/config.js";
 import { REPLY_SCHEMA, SITES, capReply, modelByKey, situationText, systemPrompt } from "./wilo.js";
-import { ONBOARDING, memoryNote, nextQuestion, recordAnswer } from "./memory.js";
+import { ONBOARDING, cleanRule, freeWindowNow, memoryNote, nextQuestion, recentSessions, recordAnswer } from "./memory.js";
 
 // A session ends when no tab of the site has been open for this long.
 const GONE_AFTER_MS = 2 * 60 * 1000;
@@ -198,10 +198,30 @@ async function extend(site, minutes) {
   });
 }
 
+function newSession(app, intent, next, minutes, now, extra = {}) {
+  return {
+    app,
+    intent,
+    next,
+    agreedMin: minutes,
+    startedAt: now,
+    endsAt: now + minutes * 60000,
+    extensions: 0,
+    declines: 0,
+    lastSeen: now,
+    turns: [], // every exchange with Wilo in this session
+    conversationFrom: 0, // where the current time-up conversation starts in turns
+    ...extra,
+  };
+}
+
 // A session is over (the user clicked "I'm done", or left the site): record
 // how it went. Wilo learns typical session lengths and patterns from these.
 async function endSession(site, s, reason) {
   const started = new Date(s.startedAt);
+  const endedAt = reason === "done" ? Date.now() : s.lastSeen;
+  const answered = (s.turns || []).filter((t) => t.reply);
+  const last = answered[answered.length - 1];
   await appendLog({
     kind: "session-end",
     site,
@@ -209,7 +229,10 @@ async function endSession(site, s, reason) {
     intent: s.intent,
     next: s.next,
     agreedMin: s.agreedMin,
-    usedMin: Math.max(0, Math.round(((reason === "done" ? Date.now() : s.lastSeen) - s.startedAt) / 60000)),
+    usedMin: Math.max(0, Math.round((endedAt - s.startedAt) / 60000)),
+    endedAt,
+    lastDecision: last ? last.reply.decision : null,
+    free: !!s.free,
     extensions: s.extensions,
     startHour: started.getHours(),
     weekday: started.getDay(),
@@ -273,16 +296,39 @@ const handlers = {
     const session = await updateSession(msg.site, (s) => s && { ...s, lastSeen: now });
     if (session) return { session, now };
     const profile = await getProfile();
+    const log = await getLog();
+    const app = SITES[msg.site] || msg.site;
+
+    // Inside one of the user's free-time windows: no questions, a session runs
+    // until the window ends (then the normal time-up).
+    const free = freeWindowNow(profile.rules, new Date(now));
+    if (free) {
+      const started = await updateSession(msg.site, () => newSession(app, "Free time (your rule)", "", free.minutesLeft, now, { free: true }));
+      const d = new Date(now);
+      await appendLog({ kind: "start", site: msg.site, app, intent: started.intent, minutes: free.minutesLeft, next: "", hour: d.getHours(), weekday: d.getDay(), free: true });
+      const hobby = profile.onboarding.answers && profile.onboarding.answers.hobby;
+      return { session: started, now, freeStart: { until: free.rule.to, hobby: hobby || null } };
+    }
+
     const onboarding = profile.onboarding.offered ? null : ONBOARDING;
-    const question = onboarding ? null : nextQuestion(profile, await getLog(), { app: SITES[msg.site] || msg.site, now: new Date() });
-    return { session: null, now, onboarding, question };
+    const question = onboarding ? null : nextQuestion(profile, log, { app, now: new Date() });
+    // Back soon after a session: the start screen reminds them what they said.
+    const recent = recentSessions(log, now, 1).pop();
+    const welcomeBack = recent && {
+      app: recent.app,
+      minutesAgo: Math.max(0, Math.round((now - recent.endedAt) / 60000)),
+      next: recent.next || null,
+      lastDecision: recent.lastDecision || null,
+    };
+    return { session: null, now, onboarding, question, welcomeBack };
   },
 
   // First start screen: the three tap questions, or null if skipped.
   async onboarding(msg) {
     const answers = msg.answers && typeof msg.answers === "object" ? msg.answers : {};
     const profile = await getProfile();
-    await chrome.storage.local.set({ profile: { ...profile, onboarding: { offered: true, answers } } });
+    // The onboarding counts as today's questions: no check-in question until tomorrow.
+    await chrome.storage.local.set({ profile: { ...profile, onboarding: { offered: true, answers }, lastQuestionDay: new Date().toDateString() } });
     await appendLog({ kind: "onboarding", answers, skipped: !msg.answers });
     return {};
   },
@@ -306,6 +352,16 @@ const handlers = {
     return {};
   },
 
+  // A free-time rule added from the page or the popup.
+  async "add-rule"(msg) {
+    const rule = cleanRule(msg.rule);
+    if (!rule) return { error: "invalid rule" };
+    const profile = await getProfile();
+    await chrome.storage.local.set({ profile: { ...profile, rules: [...(profile.rules || []), rule] } });
+    await appendLog({ kind: "rule", rule, from: msg.from || "page" });
+    return { rule };
+  },
+
   async "no-questions"() {
     const profile = await getProfile();
     await chrome.storage.local.set({ profile: { ...profile, noQuestions: true } });
@@ -327,19 +383,9 @@ const handlers = {
   async start(msg) {
     const minutes = Math.max(1, Math.min(240, Math.round(Number(msg.minutes) || 0)));
     const now = Date.now();
-    const session = await updateSession(msg.site, () => ({
-      app: SITES[msg.site] || msg.site,
-      intent: String(msg.intent || "").slice(0, 200),
-      next: String(msg.next || "").slice(0, 200),
-      agreedMin: minutes,
-      startedAt: now,
-      endsAt: now + minutes * 60000,
-      extensions: 0,
-      declines: 0,
-      lastSeen: now,
-      turns: [], // every exchange with Wilo in this session
-      conversationFrom: 0, // where the current time-up conversation starts in turns
-    }));
+    const session = await updateSession(msg.site, () =>
+      newSession(SITES[msg.site] || msg.site, String(msg.intent || "").slice(0, 200), String(msg.next || "").slice(0, 200), minutes, now),
+    );
     const d = new Date(now);
     await appendLog({ kind: "start", site: msg.site, app: session.app, intent: session.intent, minutes, next: session.next, hour: d.getHours(), weekday: d.getDay() });
     return { session };

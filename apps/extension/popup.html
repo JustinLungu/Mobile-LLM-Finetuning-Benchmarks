@@ -13,6 +13,24 @@
   <div id="status-detail" class="hint"></div>
 
   <section>
+    <h2>Your rules</h2>
+    <p class="hint">Times when you can use social media without explaining yourself. Wilo just wishes you a good time.</p>
+    <div id="rules"></div>
+    <div class="rule-form">
+      <select id="rule-days">
+        <option value="every day">Every day</option>
+        <option value="weekdays">Weekdays</option>
+        <option value="weekends">Weekends</option>
+      </select>
+      <input id="rule-from" type="time" value="17:00" />
+      <span>–</span>
+      <input id="rule-to" type="time" value="19:00" />
+    </div>
+    <input id="rule-why" maxlength="200" placeholder="Why this time? (optional)" style="margin-top: 6px;" />
+    <button id="rule-add">Add free time</button>
+  </section>
+
+  <section>
     <h2>Right now</h2>
     <div id="sessions" class="hint">No open sessions.</div>
   </section>

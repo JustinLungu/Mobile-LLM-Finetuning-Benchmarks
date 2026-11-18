@@ -29,7 +29,89 @@ export const ONBOARDING = [
     text: "What do you mostly want help with?",
     options: ["Scrolling too long", "Getting distracted", "Sleeping on time"],
   },
+  {
+    key: "hobby",
+    label: "Enjoys",
+    text: "What do you enjoy besides social media?",
+    options: ["Reading", "Sport", "Music", "Seeing friends"],
+  },
 ];
+
+// --- The user's own rules: free time without explaining ------------------------
+// A rule: { days: "every day" | "weekdays" | "weekends", from: "17:00", to: "19:00" }.
+// A window may cross midnight (from "22:00" to "01:00").
+
+const minutesOf = (hhmm) => {
+  const [h, m] = String(hhmm).split(":").map(Number);
+  return h * 60 + (m || 0);
+};
+
+function dayMatches(days, weekday) {
+  if (days === "weekdays") return weekday >= 1 && weekday <= 5;
+  if (days === "weekends") return weekday === 0 || weekday === 6;
+  return true;
+}
+
+// The free window the user is in now, with the minutes left, or null.
+export function freeWindowNow(rules, now = new Date()) {
+  const t = now.getHours() * 60 + now.getMinutes();
+  for (const rule of rules || []) {
+    const from = minutesOf(rule.from);
+    const to = minutesOf(rule.to);
+    if (from === to) continue;
+    const crosses = to < from;
+    // For a window crossing midnight, the part after midnight belongs to the previous day's rule.
+    const inToday = crosses ? t >= from : t >= from && t < to;
+    const inYesterdays = crosses && t < to;
+    const day = inYesterdays ? (now.getDay() + 6) % 7 : now.getDay();
+    if ((inToday || inYesterdays) && dayMatches(rule.days, day)) {
+      const left = inYesterdays ? to - t : (crosses ? to + 24 * 60 : to) - t;
+      return { rule, minutesLeft: left };
+    }
+  }
+  return null;
+}
+
+export const describeRule = (r) => `${r.days} ${r.from}–${r.to}` + (r.why ? ` ("${r.why}")` : "");
+
+// Validate a rule from the page or the popup; null if it isn't usable.
+export function cleanRule(r) {
+  const time = /^([01]\d|2[0-3]):[0-5]\d$/;
+  if (!r || !time.test(r.from) || !time.test(r.to) || r.from === r.to) return null;
+  const days = ["every day", "weekdays", "weekends"].includes(r.days) ? r.days : "every day";
+  const why = String(r.why || "").trim().slice(0, 200);
+  return { days, from: r.from, to: r.to, ...(why ? { why } : {}) };
+}
+
+// --- Recent sessions: Wilo remembers what happened between sessions ------------
+
+const RECENT_HOURS = 3;
+
+function ago(ms) {
+  const min = Math.round(ms / 60000);
+  if (min < 1) return "less than a minute ago";
+  if (min < 60) return `${min} minute${min === 1 ? "" : "s"} ago`;
+  const h = Math.round(min / 60);
+  return `${h} hour${h === 1 ? "" : "s"} ago`;
+}
+
+const DECISION_WORDS = { grant: "more time", counter_offer: "a shorter offer", decline: "no extra time" };
+
+export function recentSessions(log, now = Date.now(), hours = RECENT_HOURS) {
+  return log
+    .filter((e) => e.kind === "session-end" && e.endedAt && now - e.endedAt < hours * 3600000)
+    .slice(-3);
+}
+
+function recentLine(e, now) {
+  let line = `left ${e.app} ${ago(now - e.endedAt)}`;
+  if (e.intent) line += ` after planning ${e.agreedMin} minutes for "${e.intent}"`;
+  if (!e.fastForwarded && e.usedMin) line += ` and using ${e.usedMin}`;
+  const extras = [];
+  if (e.next) extras.push(`said "${e.next}" was next`);
+  if (e.lastDecision) extras.push(`Wilo's last answer: ${DECISION_WORDS[e.lastDecision] || e.lastDecision}`);
+  return extras.length ? `${line} (${extras.join("; ")})` : line;
+}
 
 // --- Time helpers --------------------------------------------------------------
 
@@ -93,8 +175,10 @@ export function memoryNote(profile, log) {
     return a[key] && !q.options.includes(a[key]) ? `${q.label}: "${a[key]}"` : null;
   };
   if (a.bedtime) schedule.push(typed("bedtime") || (a.bedtime === "Later" ? "usually goes to bed after midnight" : `usually in bed by ${a.bedtime}`));
-  if (a.strictness) preferences.push(typed("strictness") || `wants ${a.strictness.toLowerCase()} strictness`);
+  const STRICT = { Gentle: "wants Wilo to be gentle", Balanced: "wants Wilo balanced between gentle and strict", Strict: "wants Wilo to be strict" };
+  if (a.strictness) preferences.push(typed("strictness") || STRICT[a.strictness]);
   if (a.help) preferences.push(typed("help") || `mostly wants help with ${a.help.toLowerCase()}`);
+  if (a.hobby) preferences.push(typed("hobby") || `enjoys ${a.hobby.toLowerCase()}`);
   for (const f of profile.facts || []) (f.section === "schedule" ? schedule : preferences).push(f.text);
   const { typical, patterns } = learned(log);
 
@@ -103,6 +187,12 @@ export function memoryNote(profile, log) {
   if (preferences.length) lines.push(`Preferences: ${preferences.map(cap).join(". ")}.`);
   if (typical.length) lines.push(`Typical sessions: ${typical.join(", ")}.`);
   if (patterns.length) lines.push(`Patterns: ${patterns.join("; ")}.`);
+  if ((profile.rules || []).length) {
+    lines.push(`Their rules: free time without needing a reason on ${profile.rules.map(describeRule).join(", ")}.`);
+  }
+  const now = Date.now();
+  const recent = recentSessions(log, now);
+  if (recent.length) lines.push(`Recently: ${recent.map((e) => recentLine(e, now)).join("; ")}.`);
   return lines.join("\n");
 }
 

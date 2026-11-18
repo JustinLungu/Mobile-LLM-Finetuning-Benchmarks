@@ -18,6 +18,11 @@
     }
   };
   document.querySelectorAll("[data-wilo-overlay]").forEach((e) => e.remove());
+  // Two copies can start in the same page (the page's own and one added by
+  // background.js right after an update). Only the newest may show anything.
+  const copyId = Math.random().toString(36).slice(2);
+  document.documentElement.dataset.wiloCopy = copyId;
+  const newest = () => document.documentElement.dataset.wiloCopy === copyId;
 
   const site = location.hostname;
   const CHECK_IN_MS = 30 * 1000; // tells the background script this tab is still open
@@ -117,6 +122,15 @@
       .bubble.wilo { align-self: flex-start; background: var(--bubble); color: var(--text); border-bottom-left-radius: 4px; }
       .bubble.thinking { color: var(--muted); font-style: italic; }
       .note { color: var(--muted); font-size: 13px; margin-top: 8px; }
+      .welcome { margin: 2px 0 10px; color: var(--sub); }
+      .free { margin-top: 10px; text-align: center; }
+      #free-form { text-align: left; margin-top: 8px; }
+      #free-form[hidden] { display: none; }
+      .free-row { display: flex; gap: 6px; align-items: center; margin: 8px 0; }
+      .free-row select, .free-row input { width: auto; min-width: 0; box-sizing: border-box; }
+      .free-row select { flex: 0 0 auto; padding: 8px 4px; }
+      .free-row input { flex: 1; padding: 8px 6px; }
+      select { font: inherit; color: var(--text); background: var(--field); border: 1px solid var(--line); border-radius: 10px; padding: 8px; }
       .question { margin: 10px 0 14px; padding: 12px; border-radius: 12px; background: var(--bubble); }
       .question .note { margin: 6px 0 0; }
       .qhead { font-size: 12px; font-weight: 600; letter-spacing: 0.03em; text-transform: uppercase; color: var(--muted); margin-bottom: 4px; }
@@ -154,7 +168,7 @@
   }
 
   function show(newMode) {
-    if (!connected()) return dispose(); // a disconnected copy must not cover the page
+    if (!connected() || !newest()) return dispose(); // a disconnected or replaced copy must not cover the page
     mount();
     mode = newMode;
     host.style.display = "block";
@@ -185,7 +199,7 @@
     const answers = {};
     card.innerHTML = `
       <h1>Hi, I'm Wilo 👋</h1>
-      <p class="sub">I help you use ${esc(appName())} on purpose. Want me to get to know you a bit first? It's 3 quick questions.</p>
+      <p class="sub">I help you use ${esc(appName())} on purpose. Want me to get to know you a bit first? It's 4 quick questions.</p>
       <div class="row">
         <button class="alt" id="skip">Not now</button>
         <button class="main" id="sure">Sure</button>
@@ -276,13 +290,83 @@
     });
   }
 
+  // Back soon after a session: remind them, gently, what they said.
+  function welcomeLine(w) {
+    if (!w) return "";
+    const when = w.minutesAgo < 1 ? "just now" : `${w.minutesAgo} min ago`;
+    let text = `You left ${esc(w.app)} ${when}`;
+    if (w.next) text += ` and said “${esc(w.next)}” was next`;
+    else if (w.lastDecision === "decline") text += " after Wilo said no more time";
+    return `<p class="welcome">${text}. What's the plan now?</p>`;
+  }
+
+  // Inside one of the user's free-time windows: a small note in the corner
+  // instead of the start screen. It doesn't block the page.
+  const NUDGES = {
+    Reading: "📚 A few pages of your book would be nice too.",
+    Sport: "🏃 A bit of sport later would feel good too.",
+    Music: "🎵 Some music would be a nice break too.",
+    "Seeing friends": "👋 Maybe message a friend to meet up, too.",
+  };
+  function freeToast({ until, hobby }) {
+    if (!newest()) return;
+    const nudge = hobby ? NUDGES[hobby] || `Remember: ${esc(hobby)} is good for you too.` : "Enjoy it, and keep an eye on the clock.";
+    const t = document.createElement("div");
+    t.dataset.wiloOverlay = "";
+    t.style.cssText = "all: initial; position: fixed; right: 20px; bottom: 20px; z-index: 2147483647;";
+    const shadow = t.attachShadow({ mode: "open" });
+    shadow.innerHTML = `
+      <style>
+        .toast { --card: #ffffff; --text: #0f172a; --muted: #64748b; color-scheme: light;
+          font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; background: var(--card); color: var(--text);
+          border-radius: 14px; padding: 12px 36px 12px 14px; max-width: 300px; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3); position: relative; }
+        @media (prefers-color-scheme: dark) { .toast { --card: #1e1f24; --text: #f1f5f9; --muted: #9aa3b2; color-scheme: dark; } }
+        b { display: block; margin-bottom: 2px; }
+        .muted { color: var(--muted); }
+        button { position: absolute; top: 6px; right: 8px; background: none; border: 0; color: var(--muted); font-size: 16px; cursor: pointer; }
+      </style>
+      <div class="toast"><b>Free time until ${esc(until)}, enjoy! 😊</b><span class="muted">${nudge}</span><button title="Close">×</button></div>`;
+    shadow.querySelector("button").addEventListener("click", () => t.remove());
+    document.documentElement.appendChild(t);
+    setTimeout(() => t.remove(), 10000);
+  }
+
+  // Setting up a free-time window right from the start screen. If it covers
+  // now, the start screen closes and the free-time note appears.
+  function wireFreeForm() {
+    const form = root.getElementById("free-form");
+    root.getElementById("free-open").addEventListener("click", () => (form.hidden = !form.hidden));
+    root.getElementById("free-save").addEventListener("click", async () => {
+      const rule = {
+        days: root.getElementById("free-days").value,
+        from: root.getElementById("free-from").value,
+        to: root.getElementById("free-to").value,
+        why: root.getElementById("free-why").value,
+      };
+      const res = await send("add-rule", { rule, from: "page" });
+      if (!res || !res.rule) {
+        root.getElementById("err").textContent = "Pick two different times.";
+        return;
+      }
+      form.innerHTML = `<p class="note">Saved: ${esc(rule.days)} ${esc(rule.from)}–${esc(rule.to)}. You can change it in the Wilo icon's menu.</p>`;
+      const now = await send("status");
+      if (now && now.session) {
+        session = now.session;
+        if (now.freeStart) freeToast(now.freeStart);
+        hide();
+        schedule();
+      }
+    });
+  }
+
   function showStart(extra = {}) {
     if (extra.onboarding) return showOnboarding(extra.onboarding, () => showStart({}));
     show("start");
     card.innerHTML = `
-      <h1>Hi, I'm Wilo 👋</h1>
+      <h1>${extra.welcomeBack ? "Welcome back 👋" : "Hi, I'm Wilo 👋"}</h1>
+      ${welcomeLine(extra.welcomeBack)}
       <div id="question"></div>
-      <p class="sub">Before you dive into ${esc(appName())}: what's the plan?</p>
+      ${extra.welcomeBack ? "" : `<p class="sub">Before you dive into ${esc(appName())}: what's the plan?</p>`}
       <label for="intent">What are you here for?</label>
       <input id="intent" maxlength="200" placeholder="e.g. reply to my study group" />
       <label>How long do you need?</label>
@@ -294,7 +378,26 @@
       <label for="next">Anything planned after? <span class="optional">(optional)</span></label>
       <input id="next" maxlength="200" placeholder="e.g. dinner at 19:30" />
       <div class="row"><button class="main" id="go" disabled>Start</button></div>
-      <div class="err" id="err"></div>`;
+      <div class="err" id="err"></div>
+      <div class="free">
+        <button class="link" id="free-open">Set up free time (no explaining needed)</button>
+        <div id="free-form" hidden>
+          <p class="note">Times when you can use social media without explaining yourself. Wilo just wishes you a good time.</p>
+          <div class="free-row">
+            <select id="free-days">
+              <option value="every day">Every day</option>
+              <option value="weekdays">Weekdays</option>
+              <option value="weekends">Weekends</option>
+            </select>
+            <input id="free-from" type="time" value="17:00" />
+            <span>–</span>
+            <input id="free-to" type="time" value="19:00" />
+          </div>
+          <input id="free-why" maxlength="200" placeholder="Why this time? (optional)" />
+          <div class="row"><button class="alt" id="free-save">Save free time</button></div>
+        </div>
+      </div>`;
+    wireFreeForm();
     questionCard(extra.question);
     let minutes = null;
     const go = root.getElementById("go");
@@ -504,9 +607,10 @@
     if (!res) return; // no answer: extension reloaded, this old script is disconnected
     session = res.session;
     if (!session) {
-      if (mode !== "start") showStart({ onboarding: res.onboarding, question: res.question });
+      if (mode !== "start") showStart({ onboarding: res.onboarding, question: res.question, welcomeBack: res.welcomeBack });
       return;
     }
+    if (res.freeStart) freeToast(res.freeStart);
     if (mode === "start") hide(); // started from another tab
     schedule();
   }
@@ -514,7 +618,7 @@
   // background.js asks this before adding Wilo to an open tab, so a tab never
   // gets two copies.
   chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
-    if (msg && msg.type === "wilo-ping" && !disposed) reply({ alive: true });
+    if (msg && msg.type === "wilo-ping" && !disposed && newest()) reply({ alive: true });
   });
 
   // Another tab started, extended or ended this site's session.
@@ -533,7 +637,7 @@
   });
 
   checkIn = setInterval(() => {
-    if (connected()) send("status");
+    if (connected() && newest()) send("status");
     else dispose();
   }, CHECK_IN_MS);
   check();
