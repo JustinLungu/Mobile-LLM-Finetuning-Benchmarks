@@ -16,7 +16,8 @@ Both folders are git-ignored; re-run this after changing either source file.
     uv run apps/extension/setup.py --zip
 
 also packs the ready-to-load extension into dist/wilo-extension-<version>.zip,
-the file testers get (they unzip it and load the folder in Chrome).
+the file testers get: the `wilo-extension` folder to load in Chrome, and
+"Wilo tester guide.html" (guide/tester-guide.html with its pictures built in).
 """
 
 import argparse
@@ -93,7 +94,21 @@ def write_config() -> None:
 
 
 # Developer-only files that testers don't need.
-NOT_SHIPPED = {"setup.py", "dev", "dist", ".gitignore", "README.md"}
+NOT_SHIPPED = {"setup.py", "dev", "dist", ".gitignore", "README.md", "guide"}
+GUIDE = HERE / "guide" / "tester-guide.html"
+
+
+def guide_single_file() -> str:
+    """The tester guide with its pictures built in, so it's one file to send."""
+    import re
+
+    html = GUIDE.read_text()
+
+    def inline(match):
+        data = base64.b64encode((GUIDE.parent / match.group(1)).read_bytes()).decode()
+        return f'src="data:image/png;base64,{data}"'
+
+    return re.sub(r'src="(img/[^"]+\.png)"', inline, html)
 
 
 def make_zip() -> None:
@@ -105,6 +120,8 @@ def make_zip() -> None:
             rel = path.relative_to(HERE)
             if path.is_file() and rel.parts[0] not in NOT_SHIPPED and "__pycache__" not in rel.parts:
                 z.write(path, Path("wilo-extension") / rel)
+        # The guide sits next to the folder, so testers see it right after unzipping.
+        z.writestr("Wilo tester guide.html", guide_single_file())
     print(f"Packed {out.relative_to(REPO_ROOT)} ({out.stat().st_size / 1e6:.1f} MB)")
 
 

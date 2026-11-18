@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Wilo tester guide</title>
+<style>
+  :root {
+    --bg: #f6f7fb; --card: #ffffff; --text: #0f172a; --muted: #5b6577; --line: #e2e6ee;
+    --accent: #4f46e5; --accent-soft: #eef0ff; --ok: #0f9d58; --warn: #b45309;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #111318; --card: #1b1e25; --text: #eef1f6; --muted: #9aa3b2; --line: #2c313b; --accent: #8b8cff; --accent-soft: #23264a; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 17px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width: 820px; margin: 0 auto; padding: 32px 20px 64px; }
+  header h1 { font-size: 34px; margin: 0 0 6px; }
+  header p { margin: 0; color: var(--muted); font-size: 18px; }
+  .pills { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 14px; }
+  .pill { background: var(--accent-soft); color: var(--accent); border-radius: 999px; padding: 4px 12px; font-size: 14px; font-weight: 600; }
+  section { background: var(--card); border: 1px solid var(--line); border-radius: 18px; padding: 24px; margin-top: 22px; }
+  h2 { font-size: 23px; margin: 0 0 14px; display: flex; align-items: center; gap: 10px; }
+  .num { display: inline-grid; place-items: center; width: 32px; height: 32px; border-radius: 50%; background: var(--accent); color: #fff; font-size: 17px; flex: none; }
+  ol, ul { margin: 0; padding-left: 22px; }
+  li { margin: 6px 0; }
+  figure { margin: 16px 0 6px; }
+  figure img { display: block; max-width: 100%; border-radius: 12px; border: 1px solid var(--line); }
+  figcaption { color: var(--muted); font-size: 14px; margin-top: 6px; }
+  .shot { position: relative; display: inline-block; max-width: 100%; }
+  /* A red outline around a control in a screenshot, with its number. */
+  .ring { position: absolute; border: 3px solid #e11d48; border-radius: 14px; }
+  .ring b { position: absolute; top: -13px; right: -13px; width: 24px; height: 24px; border-radius: 50%; background: #e11d48; color: #fff;
+    font-size: 14px; display: grid; place-items: center; }
+  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: start; }
+  @media (max-width: 640px) { .row { grid-template-columns: 1fr; } }
+  .small img { max-width: 360px; }
+  .chips { display: flex; gap: 8px; flex-wrap: wrap; margin: 8px 0 4px; }
+  .chip { border: 1px solid var(--line); border-radius: 999px; padding: 4px 12px; font-size: 15px; background: var(--bg); }
+  .tip { background: var(--accent-soft); border-radius: 12px; padding: 12px 16px; margin-top: 14px; font-size: 16px; }
+  .tip b { color: var(--accent); }
+  code { background: var(--accent-soft); padding: 1px 6px; border-radius: 6px; font-size: 0.92em; }
+  footer { color: var(--muted); font-size: 15px; margin-top: 26px; text-align: center; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Wilo 👋 tester guide</h1>
+    <p>Wilo is a small companion that helps you use social media on purpose. It runs entirely on your computer: nothing you type is sent anywhere.</p>
+    <div class="pills"><span class="pill">⏱ 5 min to set up</span><span class="pill">Google Chrome</span><span class="pill">8 GB RAM or more</span></div>
+  </header>
+
+  <section>
+    <h2><span class="num">1</span> Install</h2>
+    <ol>
+      <li>Unzip <b>wilo-extension-0.2.0.zip</b> and keep the <b>wilo-extension</b> folder somewhere permanent (e.g. Documents).</li>
+      <li>In Chrome, go to <code>chrome://extensions</code>, turn on <b>Developer mode</b> ①, click <b>Load unpacked</b> ② and pick the <b>wilo-extension</b> folder.</li>
+    </ol>
+    <figure>
+      <div class="shot">
+        <img src="img/1-extensions-page.png" alt="Chrome's extensions page with Developer mode and Load unpacked" />
+        <span class="ring" style="left: 85.5%; top: 6%; width: 14%; height: 40%;"><b>1</b></span>
+        <span class="ring" style="left: 1.2%; top: 54%; width: 12.8%; height: 42%;"><b>2</b></span>
+      </div>
+    </figure>
+    <ol start="3">
+      <li>Click the puzzle icon 🧩 in Chrome's toolbar and pin <b>Wilo</b>. Click it: the first time, Wilo downloads its brain (2 GB, a few minutes). Wait until it says <b>Wilo is ready</b>.</li>
+    </ol>
+    <figure class="small"><img src="img/2-popup-ready.png" alt="Wilo's menu saying Wilo is ready" /></figure>
+  </section>
+
+  <section>
+    <h2><span class="num">2</span> Use Instagram as usual</h2>
+    <p>Wilo watches <b>Instagram, YouTube, TikTok, X, Reddit and Facebook</b>.</p>
+    <div class="row">
+      <figure>
+        <img src="img/4-start.png" alt="Wilo's start screen" />
+        <figcaption><b>When you open the site:</b> say what you're there for and for how long.</figcaption>
+      </figure>
+      <figure>
+        <img src="img/5-time-up.png" alt="Wilo's time-up chat" />
+        <figcaption><b>When time is up:</b> tell Wilo why you need more, like you'd tell a friend.</figcaption>
+      </figure>
+    </div>
+    <p>Wilo can answer in three ways:</p>
+    <div class="chips"><span class="chip">✅ +5 min</span><span class="chip">🤝 Offer: 3 min</span><span class="chip">✋ No extra time</span></div>
+    <p>You can always explain more, or click <b>I'm done</b>. Wilo remembers the conversation, so asking again without a new reason won't change its mind.</p>
+    <div class="tip"><b>Be patient:</b> Wilo thinks on your computer, so an answer takes 5–25 seconds.</div>
+  </section>
+
+  <section>
+    <h2><span class="num">3</span> Make Wilo yours</h2>
+    <ul>
+      <li><b>Getting to know you:</b> the first time, Wilo asks 4 quick questions; now and then one more. Tap an answer, type your own, or skip.</li>
+      <li><b>Free time:</b> click <b>Set up free time</b> under Start to pick times when you can scroll freely. Wilo won't ask anything then.</li>
+      <li><b>Rate Wilo:</b> 👍 or 👎 on its answers. This is how we teach it.</li>
+    </ul>
+    <div class="row">
+      <figure><img src="img/6-free-time-form.png" alt="Setting up free time" /><figcaption>Setting up free time…</figcaption></figure>
+      <figure><img src="img/7-free-time-note.png" alt="The free-time note" /><figcaption>…and what you see during it.</figcaption></figure>
+    </div>
+  </section>
+
+  <section>
+    <h2><span class="num">4</span> At the end of the study</h2>
+    <div class="row">
+      <div>
+        <p>Click the Wilo icon → <b>For the study</b> → <b>Save my conversations for the Wilo team</b>, and send us the file from your Downloads folder.</p>
+        <div class="tip"><b>What's in it:</b> what you told Wilo and what it answered, your ratings and answers, and when you used which site. Never what you look at on these sites. You can read the file before sending it.</div>
+      </div>
+      <figure><img src="img/8-popup-study.png" alt="The study section in Wilo's menu" /></figure>
+    </div>
+  </section>
+
+  <footer>Something odd? Go to <code>chrome://extensions</code>, click ↻ on the Wilo card, and send us a screenshot. Thank you for testing! 💜</footer>
+</main>
+</body>
+</html>
