@@ -68,7 +68,7 @@ To try another model or model file (e.g. our fine-tuned one): Wilo icon → **Ad
 
   Otherwise about once a week it asks an open question about the week. Typed answers are kept in the user's own words.
 - **Recently:** the last sessions of the past 3 hours (when they ended, what was planned, what came next, Wilo's last answer). Coming back soon after, the start screen says *"Welcome back. You left Instagram 1 min ago and said "Sleep" was next."*
-- **Their rules:** free-time windows, set on the start screen ("Set up free time (no explaining needed)") or in the popup ("Your rules"), e.g. weekdays 17:00–19:00, with an optional "Why this time?" kept in the user's words. In a window there's no start screen, only a small note ("Free time until 19:00, enjoy! 📚 A few pages of your book would be nice too.", using the hobby from the onboarding). A session runs until the window ends, then the normal time-up.
+- **Their rules:** free-time windows, set on the start screen ("Set up free time") or in the popup ("Your rules"), e.g. weekdays 17:00–19:00, with an optional "Anything Wilo should know about this time?" kept in the user's words. In a window there's no start screen, only a small note ("Free time until 19:00, enjoy! 📚 A few pages of your book would be nice too.", using the hobby from the onboarding). A session runs until the window ends, then the normal time-up.
 - **Learned:** typical session length per app (median of at least 3 finished sessions), how often the user asks for more, and overruns, especially late at night.
 
 You can read the note in the popup under **Advanced**.

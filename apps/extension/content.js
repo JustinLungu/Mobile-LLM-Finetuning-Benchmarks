@@ -380,9 +380,9 @@
       <div class="row"><button class="main" id="go" disabled>Start</button></div>
       <div class="err" id="err"></div>
       <div class="free">
-        <button class="link" id="free-open">Set up free time (no explaining needed)</button>
+        <button class="link" id="free-open">Set up free time</button>
         <div id="free-form" hidden>
-          <p class="note">Times when you can use social media without explaining yourself. Wilo just wishes you a good time.</p>
+          <p class="note">Pick times when you can scroll freely. Wilo won't ask what you're here for during them.</p>
           <div class="free-row">
             <select id="free-days">
               <option value="every day">Every day</option>
@@ -393,7 +393,7 @@
             <span>–</span>
             <input id="free-to" type="time" value="19:00" />
           </div>
-          <input id="free-why" maxlength="200" placeholder="Why this time? (optional)" />
+          <input id="free-why" maxlength="200" placeholder="Anything Wilo should know about this time? (optional)" />
           <div class="row"><button class="alt" id="free-save">Save free time</button></div>
         </div>
       </div>`;
