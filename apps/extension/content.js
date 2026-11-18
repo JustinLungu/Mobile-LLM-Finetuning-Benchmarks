@@ -3,8 +3,23 @@
 // Everything Wilo decides happens in the background script.
 
 (() => {
-  if (window.top !== window || window.__wilo) return; // once per page, never inside frames
-  window.__wilo = true;
+  if (window.top !== window) return; // never inside frames
+
+  // After the extension is reloaded or updated, scripts already running in open
+  // tabs lose their connection ("Extension context invalidated"). background.js
+  // then injects the new version into those tabs, and the newest copy always
+  // takes over: it switches the previous one off and removes its overlay.
+  // (Chrome declares each page's content script once, so a previous copy only
+  // exists after such an update.)
+  const connected = () => {
+    try {
+      return !!chrome.runtime.id;
+    } catch {
+      return false;
+    }
+  };
+  if (window.__wilo) window.__wilo.dispose();
+  document.querySelectorAll("[data-wilo-overlay]").forEach((e) => e.remove());
 
   const site = location.hostname;
   const CHECK_IN_MS = 30 * 1000; // tells the background script this tab is still open
@@ -14,20 +29,12 @@
   let session = null;
   let timer = null;
   let mode = null; // null | "start" | "timeup"
+  let checkIn = null;
+  let disposed = false;
   // True while this tab talks to Wilo: session updates from that conversation
   // (e.g. a grant) must not close the overlay before the reply is shown.
   let talking = false;
 
-  // After the extension is reloaded or updated, scripts already running in open
-  // tabs lose their connection ("Extension context invalidated"). They then
-  // stop quietly; reloading the tab starts the new version.
-  const connected = () => {
-    try {
-      return !!chrome.runtime.id;
-    } catch {
-      return false;
-    }
-  };
   const send = (type, fields = {}) => {
     if (!connected()) return Promise.resolve(null);
     try {
@@ -40,6 +47,7 @@
   // --- Overlay ---------------------------------------------------------------
 
   const host = document.createElement("div");
+  host.dataset.wiloOverlay = "";
   host.style.cssText = "all: initial; position: fixed; inset: 0; z-index: 2147483647; display: none;";
   // Open (not closed) so dev/check_extension.py can click through it.
   const root = host.attachShadow({ mode: "open" });
@@ -125,7 +133,18 @@
     if (!host.isConnected) document.documentElement.appendChild(host);
   }
 
+  // Stop this copy for good: remove its overlay, timers and reactions.
+  function dispose() {
+    disposed = true;
+    mode = null;
+    clearTimeout(timer);
+    clearInterval(checkIn);
+    host.remove();
+  }
+  window.__wilo = { connected, dispose };
+
   function show(newMode) {
+    if (!connected()) return dispose(); // a disconnected copy must not cover the page
     mount();
     mode = newMode;
     host.style.display = "block";
@@ -142,7 +161,7 @@
   function pauseMedia() {
     document.querySelectorAll("video, audio").forEach((m) => m.pause());
   }
-  document.addEventListener("play", () => { if (mode) pauseMedia(); }, true);
+  document.addEventListener("play", () => { if (mode && !disposed) pauseMedia(); }, true);
 
   const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
   const appName = () => (session && session.app) || { "www.instagram.com": "Instagram", "www.youtube.com": "YouTube", "www.tiktok.com": "TikTok", "x.com": "X", "www.reddit.com": "Reddit", "www.facebook.com": "Facebook" }[site] || site;
@@ -385,7 +404,7 @@
 
   // Another tab started, extended or ended this site's session.
   chrome.storage.onChanged.addListener((changes, area) => {
-    if (area !== "session" || !changes.sessions) return;
+    if (disposed || area !== "session" || !changes.sessions) return;
     const next = (changes.sessions.newValue || {})[site] || null;
     const had = !!session;
     session = next;
@@ -398,9 +417,9 @@
     if (mode !== "timeup" || session.endsAt > Date.now()) schedule();
   });
 
-  const checkIn = setInterval(() => {
+  checkIn = setInterval(() => {
     if (connected()) send("status");
-    else clearInterval(checkIn);
+    else dispose();
   }, CHECK_IN_MS);
   check();
 })();

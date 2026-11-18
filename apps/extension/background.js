@@ -312,9 +312,26 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   return true;
 });
 
+// Chrome only adds content scripts to pages opened after the extension is
+// installed or updated. Add Wilo to tabs that are already open on watched
+// sites, so nobody has to reload them (the new copy replaces an old one).
+async function injectIntoOpenTabs() {
+  const { content_scripts } = chrome.runtime.getManifest();
+  const tabs = await chrome.tabs.query({ url: content_scripts[0].matches });
+  for (const tab of tabs) {
+    chrome.scripting
+      .executeScript({ target: { tabId: tab.id }, files: content_scripts[0].js })
+      .catch((e) => console.warn(`[wilo] couldn't add Wilo to ${tab.url}: ${e.message}`));
+  }
+}
+
 // Load the model as soon as Chrome starts, so the first reply is quick.
 chrome.runtime.onStartup.addListener(() => ensureOffscreen());
-chrome.runtime.onInstalled.addListener(() => restartModel());
+chrome.runtime.onInstalled.addListener((details) => {
+  console.log(`[wilo] installed (${details.reason})`);
+  restartModel();
+  injectIntoOpenTabs();
+});
 
 // For debugging from the service worker's DevTools console (and dev/check_extension.py).
 globalThis.wilo = { restartModel, handlers };
