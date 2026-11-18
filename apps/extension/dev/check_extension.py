@@ -247,7 +247,14 @@ def main() -> int:
             path = out / f"{name}_{theme}.png"
             path.write_bytes(base64.b64decode(shot["data"]))
             print(f"Screenshot: {path}")
-        wait_for(lambda: chrome.evaluate(page, page_js("return !!r && host.style.display === 'block' && !!r.getElementById('intent');")), 60, what="start screen")
+        # First time: the onboarding (three tap questions), then the start form.
+        wait_for(lambda: chrome.evaluate(page, page_js("return !!r && host.style.display === 'block' && !!r.getElementById('sure');")), 60, what="onboarding")
+        screenshot("onboarding")
+        chrome.evaluate(page, page_js("r.getElementById('sure').click(); return true;"))
+        for answer in ["23:00", "Balanced", "Scrolling too long"]:
+            chrome.evaluate(page, page_js(f"const c = [...r.querySelectorAll('.chip')].find(c => c.textContent === {json.dumps(answer)}); c.click(); return true;"))
+        print("Onboarding answered")
+        wait_for(lambda: chrome.evaluate(page, page_js("return !!r.getElementById('intent');")), 10, every=0.3, what="start screen")
         print("Start screen shown")
         chrome.evaluate(page, page_js("r.querySelector('.chip[data-min=\"10\"]').click(); return true;"))
         screenshot("start")
@@ -294,6 +301,8 @@ def main() -> int:
         screenshot("time_up")
         log = chrome.evaluate(sw, "chrome.storage.local.get('log').then(x => x.log)")
         negotiations = [e for e in log if e["kind"] == "negotiation"]
+        note = chrome.evaluate(sw, "wilo.currentNote()")
+        print(f"\nWhat Wilo knows (memory note):\n{note}")
         print(f"\nLast reply in the log (Wilo saw {negotiations[-1]['historyTurns']} earlier exchanges):")
         print(json.dumps(negotiations[-1]["reply"], indent=2, ensure_ascii=False))
         conversations = [e for e in log if e["kind"] == "conversation"]
