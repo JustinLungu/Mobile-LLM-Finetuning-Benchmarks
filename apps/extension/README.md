@@ -11,8 +11,7 @@ You get a file called `wilo-extension-0.1.0.zip`.
 3. Turn on **Developer mode** (top right).
 4. Click **Load unpacked** and pick the `wilo-extension` folder.
 5. Click the puzzle icon in the toolbar and pin **Wilo**. Click it: the first time, Wilo downloads its model (2 GB). This takes a few minutes on good Wi-Fi. If you close Chrome, it continues where it stopped.
-6. Optional: in the same window, fill in **What Wilo knows about you** (schedule, habits, how strict Wilo should be). It saves by itself.
-7. Open instagram.com and use it as usual.
+6. Open instagram.com and use it as usual. The first time, Wilo offers 3 quick questions to get to know you (tap an answer or type your own; you can skip). Now and then it asks one more on the start screen, which is always optional.
 
 Works in Chrome on Windows, Mac and Linux, with 8 GB of RAM or more. While Wilo is loaded, Chrome uses about 2–4 GB more memory, depending on the model.
 
@@ -29,6 +28,7 @@ uv run apps/extension/setup.py          # downloads wllama, writes generated/con
 uv run apps/extension/setup.py --zip    # also makes dist/wilo-extension-<version>.zip for testers
 uv run apps/extension/dev/check_extension.py   # end-to-end check in headless Chrome
 uv run apps/extension/dev/check_open_tabs.py   # Wilo in tabs open before an install or update
+uv run apps/extension/dev/check_memory.py      # what Wilo learns, and its check-in questions
 ```
 
 `setup.py` takes Wilo's rules from `spec/bench_prompts.json` and the model links from `models/registry.yaml`, so the extension uses the same prompt and model files as the benchmarks and the training data. To load your working copy, use **Load unpacked** on `apps/extension/` itself. After editing files, click the reload icon on `chrome://extensions`.
@@ -45,6 +45,7 @@ To try another model or model file (e.g. our fine-tuned one): Wilo icon → **Ad
 | `background.js` | One session per site (intent, minutes, extensions), builds Wilo's prompt, applies its decision, keeps the log |
 | `offscreen.js` | A hidden page that downloads the model (in 32 MB parts, resumable) and runs it with [wllama](https://github.com/ngxson/wllama) (llama.cpp compiled to WebAssembly) |
 | `wilo.js` | Wilo's prompt and reply format, identical to the training data |
+| `memory.js` | What Wilo knows about the user: onboarding answers, check-in questions and patterns learned from sessions, written as the memory note |
 | `popup.*` | Model status, settings, the log |
 
 - **Wilo sees the whole conversation of the session** (up to 12 earlier exchanges). Each user turn is the situation at that moment (time, app, intent, agreed and used minutes, extensions, next event) plus what the user said, in exactly the training format. Wilo's instructions are in `spec/wilo_prompt.json`, and its JSON reply is forced to the schema, so it can't be malformed.
@@ -54,6 +55,20 @@ To try another model or model file (e.g. our fine-tuned one): Wilo icon → **Ad
 - **Counter-offer:** the user can take it or explain more.
 - **Decline:** the user can close the tab or ask again. Asking again is immediate after the first decline, then there's a wait that grows with each further decline (10 s, 20 s, …). A small "stay anyway (5 min)" link appears after 20 s, because Wilo never blocks completely.
 - **When a session ends:** after no tab of that site has been open for 2 minutes.
+
+**What Wilo knows about the user** is written by Wilo itself, in the same layout as the training data's memory note (Schedule / Preferences / Typical sessions / Patterns). It comes from three sources:
+- **Onboarding:** the first time, 3 optional questions (bedtime, how strict, what to help with). Users tap an answer or type their own.
+- **Check-in questions:** at most one a day, at the top of the start screen ("Let's get to know each other a bit"), each asked once and always skippable, with "Don't ask me questions" to stop them. Wilo asks when it notices something:
+  - a usual time ("is that free time?")
+  - an unusual time
+  - a "next event" that keeps coming up ("is it a regular thing?")
+  - being past bedtime
+  - sessions that keep running long
+
+  Otherwise about once a week it asks an open question about the week. Typed answers are kept in the user's own words.
+- **Learned:** typical session length per app (median of at least 3 finished sessions), how often the user asks for more, and overruns, especially late at night.
+
+You can read the note in the popup under **Advanced**.
 
 **Models:** all four load. The model is saved in 32 MB parts and handed to wllama as pieces on disk, so the browser's 2 GB limit on a single file doesn't apply. The table shows the same conversation ("come on", then "please", then "pleeease, just a bit more") with the base models, on a laptop CPU with no GPU:
 
