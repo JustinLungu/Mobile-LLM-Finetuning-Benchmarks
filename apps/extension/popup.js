@@ -8,27 +8,40 @@ async function settings() {
   return { modelKey: CONFIG.defaultModel, customModelUrl: "", memoryNote: "", ...(settings || {}) };
 }
 
+async function saveSettings(change) {
+  await chrome.storage.local.set({ settings: { ...(await settings()), ...change } });
+}
+
+// Plain words for testers; the technical detail goes in the small line below.
 function showModel(model) {
   const fill = $("bar-fill");
-  if (!model) { $("model-status").textContent = "Not started yet."; fill.style.width = "0"; return; }
-  const name = (CONFIG.models.find((m) => m.key === model.key) || { name: model.key || "" }).name;
-  if (model.state === "downloading") {
+  const bar = $("bar");
+  const name = model && (CONFIG.models.find((m) => m.key === model.key) || { name: "Custom model" }).name;
+  let text = "Starting…", detail = "", width = 0, showBar = true;
+  if (!model) {
+    text = "Starting…";
+  } else if (model.state === "downloading") {
     const pct = model.total ? Math.round((100 * model.loaded) / model.total) : 0;
-    $("model-status").textContent = `Downloading ${name}: ${pct}% of ${gb(model.total || 0)} (only the first time)` + (model.note ? ` – ${model.note}` : "");
-    fill.style.width = pct + "%";
+    text = `Getting Wilo ready: downloading ${pct}% of ${gb(model.total || 0)}`;
+    detail = "Only the first time. If you close Chrome, it continues later." + (model.note ? ` (${model.note})` : "");
+    width = pct;
   } else if (model.state === "warming") {
-    $("model-status").textContent = `Loading ${name}…` + (model.note ? ` ${model.note}` : "");
-    fill.style.width = "100%";
+    text = "Almost ready…";
+    detail = `${name}, ${model.note || "loading"}`;
+    width = 100;
   } else if (model.state === "ready") {
-    const extras = [model.gpu ? "on the GPU" : "on the CPU", model.multithread ? "multithreaded" : "single thread"].join(", ");
-    $("model-status").textContent = `✅ ${name} ready (${extras})` + (model.gpuNote ? `. CPU because ${model.gpuNote}.` : "");
-    fill.style.width = "100%";
+    text = "✅ Wilo is ready";
+    detail = `${name}, ${model.gpu ? "on the GPU" : "on the CPU"}` + (model.gpuNote ? ` (${model.gpuNote})` : "");
+    showBar = false;
   } else if (model.state === "error") {
-    $("model-status").textContent = `❌ ${name}: ${model.error}`;
-    fill.style.width = "0";
-  } else {
-    $("model-status").textContent = "Starting…";
+    text = "❌ Wilo couldn't start";
+    detail = `${name}: ${model.error}`;
+    showBar = false;
   }
+  $("status").textContent = text;
+  $("status-detail").textContent = detail;
+  bar.style.display = showBar ? "block" : "none";
+  fill.style.width = width + "%";
 }
 
 function showSessions(sessions) {
@@ -38,23 +51,20 @@ function showSessions(sessions) {
   for (const s of list) {
     const left = Math.round((s.endsAt - Date.now()) / 60000);
     const div = document.createElement("div");
-    div.textContent = `${s.app}: ${s.intent} (${left > 0 ? left + " min left" : "time's up"}, ${s.extensions} extension${s.extensions === 1 ? "" : "s"})`;
+    div.textContent = `${s.app}: ${s.intent} (${left > 0 ? left + " min left" : "time's up"})`;
     $("sessions").appendChild(div);
   }
 }
 
 async function showLogCount() {
   const { log = [] } = await chrome.storage.local.get("log");
-  const count = (kind) => log.filter((e) => e.kind === kind).length;
-  $("log-count").textContent = `${count("conversation")} conversations, ${count("negotiation")} replies so far.`;
+  const n = log.filter((e) => e.kind === "conversation").length;
+  $("log-count").textContent = `${n} conversation${n === 1 ? "" : "s"} so far.`;
 }
 
 async function init() {
   const s = await settings();
-  for (const m of CONFIG.models) {
-    const option = new Option(`${m.name} (${gb(m.sizeBytes)})`, m.key);
-    $("model").add(option);
-  }
+  for (const m of CONFIG.models) $("model").add(new Option(`${m.name} (${gb(m.sizeBytes)})`, m.key));
   $("model").value = s.modelKey;
   $("custom-url").value = s.customModelUrl;
   $("memory").value = s.memoryNote;
@@ -69,13 +79,27 @@ async function init() {
     if (area === "local" && changes.log) showLogCount();
   });
 
-  $("save").addEventListener("click", async () => {
+  // The note saves itself shortly after typing stops.
+  let pending = null;
+  $("memory").addEventListener("input", () => {
+    $("memory-saved").textContent = "Saving…";
+    clearTimeout(pending);
+    pending = setTimeout(async () => {
+      await saveSettings({ memoryNote: $("memory").value.trim() });
+      $("memory-saved").textContent = "Saved ✓";
+    }, 600);
+  });
+
+  $("apply-model").addEventListener("click", async () => {
     const before = await settings();
-    const after = { modelKey: $("model").value, customModelUrl: $("custom-url").value.trim(), memoryNote: $("memory").value.trim() };
-    await chrome.storage.local.set({ settings: after });
-    const modelChanged = before.modelKey !== after.modelKey || before.customModelUrl !== after.customModelUrl;
-    if (modelChanged) await chrome.runtime.sendMessage({ type: "restart-model" });
-    $("saved").textContent = modelChanged ? "Saved. Loading the new model…" : "Saved.";
+    const change = { modelKey: $("model").value, customModelUrl: $("custom-url").value.trim() };
+    if (change.modelKey === before.modelKey && change.customModelUrl === before.customModelUrl) {
+      $("model-saved").textContent = "Already using this model.";
+      return;
+    }
+    await saveSettings(change);
+    await chrome.runtime.sendMessage({ type: "restart-model" });
+    $("model-saved").textContent = "Switching model…";
   });
 
   $("time-up").addEventListener("click", async () => {
@@ -88,12 +112,14 @@ async function init() {
     const blob = new Blob([JSON.stringify(log, null, 2)], { type: "application/json" });
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
-    a.download = `wilo-log-${new Date().toISOString().slice(0, 10)}.json`;
+    a.download = `wilo-conversations-${new Date().toISOString().slice(0, 10)}.json`;
     a.click();
   });
 
   $("clear").addEventListener("click", async () => {
-    if (confirm("Delete the whole log? This can't be undone.")) await chrome.storage.local.set({ log: [] });
+    if (confirm("Delete all your saved conversations with Wilo? This can't be undone.")) {
+      await chrome.storage.local.set({ log: [] });
+    }
   });
 }
 

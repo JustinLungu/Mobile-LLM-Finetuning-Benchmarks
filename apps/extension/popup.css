@@ -4,18 +4,18 @@
 @media (prefers-color-scheme: dark) {
   :root { --bg: #0f172a; --fg: #e2e8f0; --muted: #94a3b8; --line: #334155; --field: #1e293b; --accent: #818cf8; }
 }
-body { width: 340px; margin: 0; padding: 14px 16px 18px; background: var(--bg); color: var(--fg); font: 13px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+body { width: 320px; margin: 0; padding: 14px 16px 16px; background: var(--bg); color: var(--fg); font: 13px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
 h1 { font-size: 18px; margin: 0 0 8px; }
-h2 { font-size: 13px; margin: 14px 0 6px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
+h2 { font-size: 12px; margin: 14px 0 6px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
 .hint { color: var(--muted); margin: 4px 0 6px; }
-.status { margin-bottom: 6px; }
-.bar { height: 6px; background: var(--field); border-radius: 3px; overflow: hidden; margin-bottom: 8px; }
+.status { font-weight: 600; font-size: 14px; }
+.bar { height: 6px; background: var(--field); border-radius: 3px; overflow: hidden; margin: 6px 0 2px; }
 #bar-fill { height: 100%; width: 0; background: var(--accent); transition: width 0.3s; }
 select, input, textarea { width: 100%; box-sizing: border-box; font: inherit; color: inherit; background: var(--field); border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; }
-details { margin-top: 6px; }
-summary { cursor: pointer; color: var(--muted); }
-button { font: inherit; border-radius: 8px; padding: 7px 12px; border: 1px solid var(--line); background: var(--field); color: inherit; cursor: pointer; }
-button.main { width: 100%; margin-top: 10px; background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+label { display: block; margin: 8px 0 4px; color: var(--muted); }
+details { margin-top: 12px; border-top: 1px solid var(--line); padding-top: 10px; }
+summary { cursor: pointer; font-weight: 600; }
+button { font: inherit; border-radius: 8px; padding: 7px 12px; border: 1px solid var(--line); background: var(--field); color: inherit; cursor: pointer; margin-top: 8px; }
+button.main { width: 100%; background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
 .row { display: flex; gap: 8px; }
 .row button { flex: 1; }
-#time-up { width: 100%; margin-top: 8px; }

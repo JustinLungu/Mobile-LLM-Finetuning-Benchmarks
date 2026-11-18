@@ -8,41 +8,42 @@
 <body>
   <h1>Wilo</h1>
 
-  <section>
-    <h2>Model</h2>
-    <div id="model-status" class="status">Starting…</div>
-    <div class="bar"><div id="bar-fill"></div></div>
-    <select id="model"></select>
-    <details>
-      <summary>Use another model file</summary>
-      <p class="hint">A link to a .gguf file, e.g. our fine-tuned model. Leave empty to use the list above.</p>
-      <input id="custom-url" placeholder="https://huggingface.co/…/model.gguf" />
-    </details>
-  </section>
+  <div id="status" class="status">Starting…</div>
+  <div class="bar" id="bar"><div id="bar-fill"></div></div>
+  <div id="status-detail" class="hint"></div>
 
   <section>
     <h2>What Wilo knows about you</h2>
     <p class="hint">Your schedule, habits and how strict Wilo should be. Wilo reads this every time it decides.</p>
     <textarea id="memory" rows="5" placeholder="Schedule: lectures on weekday mornings, sleep by 23:30.&#10;Preferences: gentle humour, medium strictness.&#10;Typical sessions: Instagram messages about 8 minutes."></textarea>
+    <div id="memory-saved" class="hint">&nbsp;</div>
   </section>
-
-  <button id="save" class="main">Save</button>
-  <div id="saved" class="hint"></div>
 
   <section>
     <h2>Right now</h2>
     <div id="sessions" class="hint">No open sessions.</div>
-    <button id="time-up">Time's up now (to try Wilo)</button>
   </section>
 
-  <section>
-    <h2>Log</h2>
-    <p class="hint">Your conversations with Wilo (with your note above and your 👍/👎), stored only on this computer. <span id="log-count"></span></p>
+  <details>
+    <summary>For the study</summary>
+    <p class="hint">Your conversations with Wilo are saved on this computer as you go (with your note and your 👍/👎). Nothing is sent anywhere. <span id="log-count"></span></p>
+    <button id="download" class="main">Save my conversations for the Wilo team</button>
+    <p class="hint">Saves a file to your Downloads folder. Send it to us at the end of the study.</p>
     <div class="row">
-      <button id="download">Download log</button>
-      <button id="clear">Clear log</button>
+      <button id="time-up">Time's up now</button>
+      <button id="clear">Delete my conversations</button>
     </div>
-  </section>
+  </details>
+
+  <details>
+    <summary>Advanced</summary>
+    <label for="model">Model</label>
+    <select id="model"></select>
+    <label for="custom-url">Or another model file (.gguf link)</label>
+    <input id="custom-url" placeholder="https://huggingface.co/…/model.gguf" />
+    <button id="apply-model">Use this model</button>
+    <div id="model-saved" class="hint"></div>
+  </details>
 
   <script type="module" src="popup.js"></script>
 </body>

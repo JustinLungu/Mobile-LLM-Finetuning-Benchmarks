@@ -10,17 +10,17 @@ You get a file called `wilo-extension-0.1.0.zip`.
 2. In Chrome, open `chrome://extensions`.
 3. Turn on **Developer mode** (top right).
 4. Click **Load unpacked** and pick the `wilo-extension` folder.
-5. Click the puzzle icon in the toolbar and pin **Wilo**. Click it: the first time, Wilo downloads its model (1.3 GB). This takes a few minutes on good Wi-Fi. If you close Chrome, it continues where it stopped.
-6. Optional: in the same window, fill in **What Wilo knows about you** (schedule, habits, how strict Wilo should be) and click **Save**.
+5. Click the puzzle icon in the toolbar and pin **Wilo**. Click it: the first time, Wilo downloads its model (2 GB). This takes a few minutes on good Wi-Fi. If you close Chrome, it continues where it stopped.
+6. Optional: in the same window, fill in **What Wilo knows about you** (schedule, habits, how strict Wilo should be). It saves by itself.
 7. Open instagram.com and use it as usual.
 
 Works in Chrome on Windows, Mac and Linux, with 8 GB of RAM or more. While Wilo is loaded, Chrome uses about 2–4 GB more memory, depending on the model.
 
-**Trying it without waiting:** click the Wilo icon → **Time's up now**.
+**Trying it without waiting:** click the Wilo icon → **For the study** → **Time's up now**.
 
 **Please rate Wilo's replies** with 👍 or 👎. It tells us which answers to teach it.
 
-**Sending us your results:** click the Wilo icon → **Download log**, and send us the file. It contains your conversations with Wilo (what you said, what it answered and your ratings), the sites and times of your sessions, and your "What Wilo knows about you" note. Nothing else.
+**Sending us your results:** your conversations are saved on your computer as you go. At the end of the study, click the Wilo icon → **For the study** → **Save my conversations for the Wilo team**, and send us the file from your Downloads folder. It contains your conversations with Wilo (what you said, what it answered and your ratings), the sites and times of your sessions, and your "What Wilo knows about you" note. Nothing else.
 
 ## For the team: build and test
 
@@ -34,7 +34,7 @@ uv run apps/extension/dev/check_extension.py   # end-to-end check in headless Ch
 
 The check needs the GGUF files from `models/download.py`. It serves them locally, opens Instagram, goes through the start screen, jumps to time-up, asks Wilo for more time, and prints the reply and the log entry. Options: `--model llama3.2-3b`, `--say "come on"` (repeat `--say` for a conversation), `--intent`, `--next`, `--dark`, `--flaky-mb 200` (the test server drops the download every 200 MB, to check resuming) and `--from-hf` (download from Hugging Face like testers).
 
-To try another model file (e.g. our fine-tuned one): Wilo icon → **Use another model file**, then paste a link to a `.gguf` file.
+To try another model or model file (e.g. our fine-tuned one): Wilo icon → **Advanced**, then pick a model or paste a link to a `.gguf` file, then click **Use this model**.
 
 ## How it works
 
