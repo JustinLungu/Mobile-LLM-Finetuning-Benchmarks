@@ -94,8 +94,21 @@ def main() -> int:
         time.sleep(0.3)
         shoot(chrome, page, "4-start.png", card_clip(chrome, page, CARD))
 
+        # 4b. Wilo reviews a vague plan and asks (staged plan conversation).
+        plan = {"app": "Instagram", "intent": "idk", "next": "", "minutes": 10, "turns": [{
+            "id": "p0", "phase": "start", "says": None, "situation": "", "raw": "{}",
+            "reply": {"assessment": "", "decision": "ask", "minutes": 10,
+                      "message": "No plan yet? What would you like to do here? Even just relaxing is fine."}}]}
+        chrome.evaluate(sw, f"chrome.storage.session.set({{plans: {{'www.instagram.com': {json.dumps(plan)}}}}}).then(() => true)")
+        chrome.call("Page.reload", {}, page)
+        wait_for(lambda: chrome.evaluate(page, page_js("return !!r && !!r.getElementById('plan-why');")), 20, every=0.5, what="plan chat")
+        chrome.evaluate(page, page_js("const w = r.getElementById('plan-why'); w.value = 'Honestly just want to relax for a bit'; w.dispatchEvent(new Event('input')); return true;"))
+        time.sleep(0.3)
+        shoot(chrome, page, "4b-plan.png", card_clip(chrome, page, CARD))
+
         # 5. Time's up, with a short conversation.
-        chrome.evaluate(page, page_js("r.getElementById('go').click(); return true;"))
+        plan = {"app": "Instagram", "intent": "Reply to my friend", "next": "Study session at 18:00", "minutes": 10, "turns": []}
+        chrome.evaluate(sw, f"chrome.storage.session.set({{plans: {{'www.instagram.com': {json.dumps(plan)}}}}}).then(() => wilo.handlers['plan-accept']({{site: 'www.instagram.com', minutes: 10}}))")
         time.sleep(1)
         turns = [{"id": f"t{i}", "says": t["says"], "situation": "", "raw": json.dumps(t["reply"]), "reply": t["reply"]} for i, t in enumerate(CONVERSATION)]
         chrome.evaluate(sw, f"""chrome.storage.session.get('sessions').then(({{sessions}}) => {{

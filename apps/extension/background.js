@@ -7,7 +7,7 @@
 //   storage.local    settings (model, memory note) and the log. Kept.
 
 import { CONFIG } from "./generated/config.js";
-import { REPLY_SCHEMA, SITES, capReply, modelByKey, situationText, systemPrompt } from "./wilo.js";
+import { PLAN_SCHEMA, REPLY_SCHEMA, SITES, capPlan, capReply, modelByKey, planText, situationText, systemPrompt } from "./wilo.js";
 import { ONBOARDING, cleanRule, freeWindowNow, memoryNote, nextQuestion, recentSessions, recordAnswer } from "./memory.js";
 
 // A session ends when no tab of the site has been open for this long.
@@ -198,6 +198,71 @@ async function extend(site, minutes) {
   });
 }
 
+// --- Reviewing the plan at the start ------------------------------------------
+// Before a session exists, Wilo reads the user's plan and accepts it, offers
+// less time, or asks something. The plan conversation lives in
+// storage.session ("plans") and moves into the session once agreed, so Wilo
+// still remembers it at time-up.
+
+async function getPlans() {
+  const { plans } = await chrome.storage.session.get("plans");
+  return plans || {};
+}
+
+async function setPlan(site, plan) {
+  const plans = await getPlans();
+  if (plan) plans[site] = plan;
+  else delete plans[site];
+  await chrome.storage.session.set({ plans });
+}
+
+async function reviewPlan(site, userSays) {
+  const plan = (await getPlans())[site];
+  if (!plan) return { error: "no plan" };
+  const note = await currentNote();
+  const user = planText(plan, userSays);
+  const history = plan.turns.filter((t) => t.raw).flatMap((t) => [
+    { role: "user", content: t.situation },
+    { role: "assistant", content: t.raw },
+  ]);
+  const messages = [{ role: "system", content: systemPrompt(note) }, ...history, { role: "user", content: user }];
+
+  const { model } = await chrome.storage.session.get("model");
+  let reply, result = null, error = null;
+  if (!model || model.state !== "ready") {
+    error = `model ${model ? model.state : "not started"}`;
+    reply = { assessment: `No model reply (${error}).`, decision: "accept", minutes: plan.minutes, message: "I'm still waking up, so your plan starts as it is. Have a good one!" };
+  } else {
+    result = await chrome.runtime.sendMessage({ target: "offscreen", type: "generate", messages, schema: PLAN_SCHEMA });
+    try {
+      if (!result || !result.ok) throw new Error(result ? result.error : "no answer from the model page");
+      reply = JSON.parse(result.raw);
+      for (const f of PLAN_SCHEMA.required) if (!(f in reply)) throw new Error(`missing ${f}`);
+    } catch (e) {
+      error = String(e.message || e);
+      reply = { assessment: "The reply couldn't be read.", decision: "accept", minutes: plan.minutes, message: "Sounds like a plan. Have a good one!" };
+    }
+  }
+  const capped = capPlan(reply, plan);
+  reply = capped.reply;
+  const turn = {
+    id: crypto.randomUUID(),
+    at: new Date().toISOString(),
+    phase: "start",
+    says: userSays || null,
+    situation: user,
+    raw: error ? null : result.raw,
+    reply,
+    error,
+    cappedFrom: capped.cappedFrom,
+    model: result && result.model,
+    ms: result && result.ms,
+  };
+  await setPlan(site, { ...plan, turns: [...plan.turns, turn] });
+  await appendLog({ kind: "plan-review", site, app: plan.app, ...turn, timings: result && result.timings });
+  return { reply, id: turn.id, fallback: !!error };
+}
+
 function newSession(app, intent, next, minutes, now, extra = {}) {
   return {
     app,
@@ -320,7 +385,8 @@ const handlers = {
       next: recent.next || null,
       lastDecision: recent.lastDecision || null,
     };
-    return { session: null, now, onboarding, question, welcomeBack };
+    const plan = (await getPlans())[msg.site] || null;
+    return { session: null, now, onboarding, question, welcomeBack, plan };
   },
 
   // First start screen: the three tap questions, or null if skipped.
@@ -391,6 +457,58 @@ const handlers = {
     return { session };
   },
 
+  // The start screen's plan: Wilo reviews it before the session starts.
+  async plan(msg) {
+    const minutes = Math.max(1, Math.min(240, Math.round(Number(msg.minutes) || 0)));
+    await setPlan(msg.site, {
+      app: SITES[msg.site] || msg.site,
+      intent: String(msg.intent || "").slice(0, 200),
+      next: String(msg.next || "").slice(0, 200),
+      minutes,
+      turns: [],
+    });
+    return reviewPlan(msg.site, null);
+  },
+
+  // The user answers Wilo's question or explains more about the plan.
+  async "plan-reply"(msg) {
+    return reviewPlan(msg.site, String(msg.text || "").slice(0, 500));
+  },
+
+  // The plan is agreed: start the session with the agreed minutes. The plan
+  // conversation becomes the start of the session's history.
+  async "plan-accept"(msg) {
+    const plan = (await getPlans())[msg.site];
+    if (!plan) return { error: "no plan" };
+    const minutes = Math.max(1, Math.min(plan.minutes, Math.round(Number(msg.minutes) || plan.minutes)));
+    const now = Date.now();
+    const session = await updateSession(msg.site, () => ({
+      ...newSession(plan.app, plan.intent, plan.next, minutes, now),
+      turns: plan.turns,
+      conversationFrom: plan.turns.length,
+      plannedMin: plan.minutes,
+    }));
+    await setPlan(msg.site, null);
+    const d = new Date(now);
+    await appendLog({ kind: "start", site: msg.site, app: plan.app, intent: plan.intent, minutes, plannedMin: plan.minutes, next: plan.next, hour: d.getHours(), weekday: d.getDay() });
+    const note = await currentNote();
+    await appendLog({
+      kind: "conversation",
+      phase: "start",
+      site: msg.site,
+      app: plan.app,
+      intent: plan.intent,
+      next: plan.next,
+      plannedMin: plan.minutes,
+      outcome: minutes === plan.minutes ? "plan accepted" : "took offer",
+      minutes,
+      memoryNote: note,
+      system: systemPrompt(note),
+      turns: plan.turns.map(({ id, says, situation, raw, reply, error, model }) => ({ id, says, situation, raw, reply, error, model })),
+    });
+    return { session };
+  },
+
   async ask(msg) {
     return askWilo(msg.site, String(msg.text || "").slice(0, 500));
   },
@@ -405,6 +523,17 @@ const handlers = {
 
 
   async done(msg, sender) {
+    // Still discussing the plan: save that conversation and drop the plan.
+    const plan = (await getPlans())[msg.site];
+    if (plan) {
+      const note = await currentNote();
+      await appendLog({
+        kind: "conversation", phase: "start", site: msg.site, app: plan.app, intent: plan.intent, next: plan.next,
+        plannedMin: plan.minutes, outcome: "done", minutes: 0, memoryNote: note, system: systemPrompt(note),
+        turns: plan.turns.map(({ id, says, situation, raw, reply, error, model }) => ({ id, says, situation, raw, reply, error, model })),
+      });
+      await setPlan(msg.site, null);
+    }
     await closeConversation(msg.site, "done");
     const s = (await getSessions())[msg.site];
     if (s) await endSession(msg.site, s, "done");

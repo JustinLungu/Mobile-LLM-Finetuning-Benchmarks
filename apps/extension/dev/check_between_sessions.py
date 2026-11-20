@@ -55,6 +55,7 @@ def main() -> int:
         wait_for(lambda: chrome.evaluate(page, page_js("return !!r.getElementById('intent');")), 10, every=0.3, what="start screen")
         chrome.evaluate(page, page_js("""const set = (id, v) => { const e = r.getElementById(id); e.value = v; e.dispatchEvent(new Event('input')); };
             set('intent', 'Check reels'); r.querySelector('.chip[data-min="10"]').click(); set('next', 'Sleep'); r.getElementById('go').click(); return true;"""))
+        wait_for(lambda: chrome.evaluate(page, page_js("const g = r && r.getElementById('go-now'); if (g) g.click(); return !!g;")), 20, every=0.3, what="Let's go")
         time.sleep(1)
         chrome.evaluate(sw, "wilo.handlers['time-up-now']()")
         wait_for(lambda: chrome.evaluate(page, page_js("return !!r.getElementById('done');")), 15, every=0.3, what="time-up")

@@ -1,7 +1,7 @@
 """End-to-end check of the Wilo extension in a real (headless) Chrome.
 
 Usage (from the repository root, after `uv run apps/extension/setup.py`):
-    uv run apps/extension/dev/check_extension.py [--model qwen3.5-2b] [--say TEXT ...] [--intent TEXT] [--next TEXT] [--flaky-mb N] [--dark] [--from-hf]
+    uv run apps/extension/dev/check_extension.py [--model qwen3.5-2b] [--say TEXT ...] [--intent TEXT] [--next TEXT] [--plan-answer TEXT] [--flaky-mb N] [--dark] [--from-hf]
 
 What it does:
 1. Serves the local GGUF files from models/ on http://127.0.0.1:8765, so the
@@ -188,12 +188,34 @@ def page_js(body):
     return f"(async () => {{ const host = {OVERLAY}; const r = host && host.shadowRoot; {body} }})()"
 
 
+# After Start, Wilo reviews the plan. Wait for each answer; take an accept or
+# an offer, answer a question with `answer`. Returns the conversation.
+def through_plan(chrome, page, answer="I just want to relax for a bit", timeout=240):
+    seen = []
+    for _ in range(4):
+        n = len(seen)
+        reply = wait_for(lambda: chrome.evaluate(page, page_js(
+            f"const b = [...r.querySelectorAll('.bubble.wilo:not(.thinking)')]; "
+            f"return b.length > {n} ? {{message: b[b.length - 1].firstChild.textContent, tag: b[b.length - 1].querySelector('.tag').textContent}} : null;")),
+            timeout, every=0.5, what="Wilo's answer to the plan")
+        seen.append(reply)
+        clicked = chrome.evaluate(page, page_js(
+            "const b = r.getElementById('go-now') || r.getElementById('take'); if (b) { b.click(); return true; } return false;"))
+        if clicked:
+            return seen
+        wait_for(lambda: chrome.evaluate(page, page_js("return !!r.getElementById('plan-why');")), 10, every=0.3, what="reply box")
+        chrome.evaluate(page, page_js(f"""const w = r.getElementById('plan-why'); w.value = {json.dumps(answer)}; w.dispatchEvent(new Event('input'));
+            r.getElementById('plan-send').click(); return true;"""))
+    raise RuntimeError("plan not agreed after 4 rounds")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--model", default="qwen3.5-2b")
     parser.add_argument("--say", action="append", help="what the user tells Wilo at time-up; repeat for a conversation")
     parser.add_argument("--intent", default="Reply to messages from my study group")
     parser.add_argument("--next", default="Workout at 18:30", help="what's planned after ('' for nothing)")
+    parser.add_argument("--plan-answer", default="I just want to relax for a bit", help="the answer if Wilo asks about the plan")
     parser.add_argument("--flaky-mb", type=int, default=0, help="test server drops each download after this many MB")
     parser.add_argument("--dark", action="store_true", help="show the pages in dark mode")
     parser.add_argument("--from-hf", action="store_true", help="download the default model from Hugging Face, as testers do")
@@ -265,6 +287,10 @@ def main() -> int:
             set('next', {json.dumps(args.next)});
             r.getElementById('go').click();
             return true;"""))
+        t0 = time.time()
+        for i, reply in enumerate(through_plan(chrome, page, args.plan_answer)):
+            print(f"Plan review {i + 1} ({reply['tag']}): {reply['message']}")
+        print(f"Plan agreed after {time.time() - t0:.1f} s")
         wait_for(lambda: chrome.evaluate(page, page_js("return host.style.display === 'none';")), 10, every=0.3, what="start screen to close")
         session = chrome.evaluate(sw, "chrome.storage.session.get('sessions').then(x => x.sessions)")
         print(f"Session started: {json.dumps(session)}")

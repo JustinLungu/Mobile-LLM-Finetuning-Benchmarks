@@ -86,3 +86,45 @@ export function capReply(reply, session) {
     modelMinutes: reply.minutes,
   };
 }
+
+// --- Reviewing the plan at the start of a session ----------------------------
+
+// The user's plan, in the same layout as the time-up situation.
+export function planText(plan, userSays, now = new Date()) {
+  let text =
+    `Current time: ${dayTime(now)}.\n` +
+    `App: ${plan.app}.\n` +
+    `The user is starting a session.\n` +
+    `Plan: ${clause(plan.intent) || "not given"}.\n` +
+    `Planned time: ${plan.minutes} minutes.\n` +
+    `Next event: ${clause(plan.next) || "nothing planned"}.`;
+  if (userSays) text += `\n\nThe user says: ${String(userSays).trim()}`;
+  return text;
+}
+
+export const PLAN_SCHEMA = {
+  type: "object",
+  properties: {
+    assessment: { type: "string" },
+    decision: { type: "string", enum: ["accept", "counter_offer", "ask"] },
+    minutes: { type: "integer", minimum: 0, maximum: 240 },
+    message: { type: "string" },
+  },
+  required: ["assessment", "decision", "minutes", "message"],
+  additionalProperties: false,
+};
+
+// Wilo never gives more than the user asked for, nor less than a minute.
+// If the message names a bigger number, it is corrected too.
+export function capPlan(reply, plan) {
+  const asked = plan.minutes;
+  let minutes = Math.round(Number(reply.minutes) || 0);
+  if (reply.decision === "ask" || minutes <= 0) minutes = asked;
+  const capped = Math.max(1, Math.min(asked, minutes));
+  let message = reply.message;
+  if (capped !== minutes && minutes > 0) {
+    const said = new RegExp(`\\b${minutes}(\\s*(more\\s+)?(min|mins|minutes)\\b)`, "gi");
+    message = message.replace(said, `${capped}$1`);
+  }
+  return { reply: { ...reply, minutes: capped, message }, cappedFrom: capped !== minutes ? minutes : undefined };
+}

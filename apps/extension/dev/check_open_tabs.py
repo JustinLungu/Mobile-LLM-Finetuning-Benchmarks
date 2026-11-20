@@ -23,7 +23,9 @@ VISIBLE = ("[...document.querySelectorAll('[data-wilo-overlay]')]"
 START = """(async () => { const r = [...document.querySelectorAll('[data-wilo-overlay]')].find(e => e.style.display === 'block').shadowRoot;
     if (r.getElementById('skip')) { r.getElementById('skip').click(); await new Promise(x => setTimeout(x, 300)); }
     const i = r.getElementById('intent'); i.value = 'check DMs'; i.dispatchEvent(new Event('input'));
-    r.querySelector('.chip[data-min="5"]').click(); r.getElementById('go').click(); return true; })()"""
+    r.querySelector('.chip[data-min="5"]').click(); r.getElementById('go').click();
+    for (let i = 0; i < 40 && !r.getElementById('go-now'); i++) await new Promise(x => setTimeout(x, 250));
+    r.getElementById('go-now').click(); return true; })()"""
 
 
 COUNT = "document.querySelectorAll('[data-wilo-overlay]').length"

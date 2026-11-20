@@ -4,7 +4,7 @@ The Wilo prototype: a Chrome extension that asks what you're opening Instagram (
 
 ## For testers: install Wilo
 
-You get a file called `wilo-extension-0.2.0.zip`. Use **Google Chrome** (Edge and Brave should work too; Safari and Firefox don't), with 8 GB of RAM or more and good Wi-Fi for the first start.
+You get a file called `wilo-extension-0.3.0.zip`. Use **Google Chrome** (Edge and Brave should work too; Safari and Firefox don't), with 8 GB of RAM or more and good Wi-Fi for the first start.
 
 1. Unzip it. You get a folder `wilo-extension`. Keep it somewhere permanent (e.g. Documents): Chrome loads Wilo from this folder every time.
 2. In Chrome, open `chrome://extensions`.
@@ -14,7 +14,7 @@ You get a file called `wilo-extension-0.2.0.zip`. Use **Google Chrome** (Edge an
 6. Open instagram.com (or YouTube, TikTok, X, Reddit, Facebook) and use it as usual.
 
 **What happens:**
-- **When you open one of these sites,** Wilo asks what you're there for and for how long. The first time, it offers 4 quick questions to get to know you; you can skip them.
+- **When you open one of these sites,** Wilo asks what you're there for and for how long, then takes a quick look at your plan: it may say OK, suggest less time, or ask you something. The first time, it offers 4 quick questions to get to know you; you can skip them.
 - **When your time is up,** you can ask Wilo for more. Tell it why, as you would tell a friend. It may say yes, offer less, or say no. You can always explain more, or click **I'm done**.
 - **Now and then,** Wilo asks one optional question on the start screen, to get to know you better.
 - **Free time:** under **Set up free time** on the start screen, choose times when you can scroll freely, without Wilo asking anything.
@@ -56,6 +56,7 @@ To try another model or model file (e.g. our fine-tuned one): Wilo icon → **Ad
 | `memory.js` | What Wilo knows about the user: onboarding answers, check-in questions and patterns learned from sessions, written as the memory note |
 | `popup.*` | Model status, settings, the log |
 
+- **Wilo reviews every plan before the session starts:** after Start, it accepts the plan (✅), offers less time (🤝) or asks something (❓, e.g. for "idk"). The user can answer, take the offer, or click "I'm done". It never gives more than asked. This conversation becomes the start of the session's history.
 - **Wilo sees the whole conversation of the session** (up to 12 earlier exchanges). Each user turn is the situation at that moment (time, app, intent, agreed and used minutes, extensions, next event) plus what the user said, in exactly the training format. Wilo's instructions are in `spec/wilo_prompt.json`, and its JSON reply is forced to the schema, so it can't be malformed.
 - **Each reply shows its decision** (✅ +10 min / 🤝 Offer: 5 min / ✋ No extra time) and 👍/👎 buttons.
 - **When a time-up conversation ends,** it's saved whole in the log with its outcome (granted, took offer, done) and the minutes given. These are ready-made fine-tuning examples.

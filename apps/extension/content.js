@@ -362,6 +362,96 @@
     });
   }
 
+  // --- Wilo reviews the plan before the session starts --------------------------
+
+  const planSummary = (p) => `${p.intent || "No plan yet"} · ${p.minutes} min` + (p.next ? ` · then ${p.next}` : "");
+
+  // A fresh plan (resumed = false) is sent to Wilo; a resumed one (after a
+  // reload) shows the conversation so far and carries on.
+  function showPlanChat(plan, resumed) {
+    show("start");
+    talking = true;
+    card.innerHTML = `
+      <h1>Your plan</h1>
+      <p class="sub">Wilo takes a quick look before you start.</p>
+      <div class="chat" id="chat"></div>
+      <div id="actions"></div>`;
+    bubble(planSummary(plan), "user");
+    if (!resumed) return askPlan(plan, null);
+    for (const t of plan.turns) {
+      if (t.says) bubble(t.says, "user");
+      wiloBubble(t.reply, t.id);
+    }
+    const last = plan.turns[plan.turns.length - 1];
+    if (last) planActions(last.reply);
+    else askPlan(plan, null);
+  }
+
+  async function askPlan(plan, text) {
+    const actions = root.getElementById("actions");
+    actions.innerHTML = "";
+    const thinking = bubble("Wilo is reading your plan…", "wilo thinking");
+    const res = text === null && plan ? await send("plan", { intent: plan.intent, minutes: plan.minutes, next: plan.next }) : await send("plan-reply", { text });
+    thinking.remove();
+    if (!res || !res.reply) {
+      bubble("Sorry, I couldn't think just now. Try again?", "wilo");
+      planReplyBox();
+      return;
+    }
+    wiloBubble(res.reply, res.fallback ? null : res.id);
+    planActions(res.reply);
+  }
+
+  function planActions(reply) {
+    const actions = root.getElementById("actions");
+    if (reply.decision === "accept") {
+      actions.innerHTML = `<div class="row"><button class="main" id="go-now">Let's go (${reply.minutes} min)</button></div>`;
+      root.getElementById("go-now").addEventListener("click", () => startAgreed(reply.minutes));
+    } else if (reply.decision === "counter_offer") {
+      actions.innerHTML = `<div class="row">
+          <button class="alt" id="done">I'm done</button>
+          <button class="main" id="take">Take ${reply.minutes} min</button>
+        </div>
+        <button class="link" id="argue">Explain more instead</button>`;
+      root.getElementById("done").addEventListener("click", () => send("done"));
+      root.getElementById("take").addEventListener("click", () => startAgreed(reply.minutes));
+      root.getElementById("argue").addEventListener("click", () => planReplyBox());
+    } else {
+      planReplyBox();
+    }
+  }
+
+  function planReplyBox() {
+    const actions = root.getElementById("actions");
+    actions.innerHTML = `
+      <label for="plan-why">Reply to Wilo</label>
+      <textarea id="plan-why" maxlength="500" placeholder="e.g. I just want to relax for a bit"></textarea>
+      <div class="row">
+        <button class="alt" id="done">I'm done</button>
+        <button class="main" id="plan-send" disabled>Send</button>
+      </div>`;
+    const why = root.getElementById("plan-why");
+    const sendBtn = root.getElementById("plan-send");
+    why.addEventListener("input", () => (sendBtn.disabled = !why.value.trim()));
+    root.getElementById("done").addEventListener("click", () => send("done"));
+    sendBtn.addEventListener("click", () => {
+      const text = why.value.trim();
+      bubble(text, "user");
+      askPlan(null, text);
+    });
+    setTimeout(() => why.focus(), 50);
+  }
+
+  async function startAgreed(minutes) {
+    const res = await send("plan-accept", { minutes });
+    if (res && res.session) {
+      talking = false;
+      session = res.session;
+      hide();
+      schedule();
+    }
+  }
+
   function showStart(extra = {}) {
     if (extra.onboarding) return showOnboarding(extra.onboarding, () => showStart({}));
     show("start");
@@ -429,17 +519,9 @@
       refresh();
     });
     intent.addEventListener("input", refresh);
-    go.addEventListener("click", async () => {
+    go.addEventListener("click", () => {
       go.disabled = true;
-      const res = await send("start", { intent: intent.value.trim(), minutes, next: root.getElementById("next").value.trim() });
-      if (res && res.session) {
-        session = res.session;
-        hide();
-        schedule();
-      } else {
-        root.getElementById("err").textContent = "Something went wrong. Try again.";
-        go.disabled = false;
-      }
+      showPlanChat({ intent: intent.value.trim(), minutes, next: root.getElementById("next").value.trim(), turns: [] }, false);
     });
     setTimeout(() => intent.focus(), 50);
   }
@@ -477,6 +559,8 @@
   }
 
   const DECISION_LABEL = {
+    accept: (m) => `✅ Plan OK: ${m} min`,
+    ask: () => "❓ Wilo asks",
     grant: (m) => `✅ +${m} min`,
     counter_offer: (m) => `🤝 Offer: ${m} min`,
     decline: () => "✋ No extra time",
@@ -610,7 +694,10 @@
     if (!res) return; // no answer: extension reloaded, this old script is disconnected
     session = res.session;
     if (!session) {
-      if (mode !== "start") showStart({ onboarding: res.onboarding, question: res.question, welcomeBack: res.welcomeBack });
+      if (mode !== "start") {
+        if (res.plan) showPlanChat(res.plan, true); // reloaded mid-conversation about the plan
+        else showStart({ onboarding: res.onboarding, question: res.question, welcomeBack: res.welcomeBack });
+      }
       return;
     }
     if (res.freeStart) freeToast(res.freeStart);
