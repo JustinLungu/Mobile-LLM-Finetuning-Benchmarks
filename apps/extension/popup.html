@@ -1,0 +1,65 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Wilo</title>
+  <link rel="stylesheet" href="popup.css" />
+</head>
+<body>
+  <h1>Wilo</h1>
+
+  <div id="status" class="status">Starting…</div>
+  <div class="bar" id="bar"><div id="bar-fill"></div></div>
+  <div id="status-detail" class="hint"></div>
+
+  <section>
+    <h2>Your rules</h2>
+    <p class="hint">Times when you can scroll freely. Wilo won't ask what you're here for during them.</p>
+    <div id="rules"></div>
+    <div class="rule-form">
+      <select id="rule-days">
+        <option value="every day">Every day</option>
+        <option value="weekdays">Weekdays</option>
+        <option value="weekends">Weekends</option>
+      </select>
+      <input id="rule-from" type="time" value="17:00" />
+      <span>–</span>
+      <input id="rule-to" type="time" value="19:00" />
+    </div>
+    <input id="rule-why" maxlength="200" placeholder="Anything Wilo should know about this time? (optional)" style="margin-top: 6px;" />
+    <button id="rule-add">Add free time</button>
+  </section>
+
+  <section>
+    <h2>Right now</h2>
+    <div id="sessions" class="hint">No open sessions.</div>
+  </section>
+
+  <details>
+    <summary>For the study</summary>
+    <p class="hint">Your conversations with Wilo are saved on this computer as you go (with your note and your 👍/👎). Nothing is sent anywhere. <span id="log-count"></span></p>
+    <button id="download" class="main">Save my conversations for the Wilo team</button>
+    <p class="hint">Saves a file to your Downloads folder. Send it to us at the end of the study.</p>
+    <div class="row">
+      <button id="time-up">Time's up now</button>
+      <button id="clear">Delete my conversations</button>
+    </div>
+  </details>
+
+  <details>
+    <summary>Advanced</summary>
+    <label>What Wilo knows about you</label>
+    <p class="hint">Written by Wilo from your quick answers and your sessions.</p>
+    <pre id="note" class="note-box">Nothing yet.</pre>
+    <button id="redo">Ask me the quick questions again</button>
+    <label for="model">Model</label>
+    <select id="model"></select>
+    <label for="custom-url">Or another model file (.gguf link)</label>
+    <input id="custom-url" placeholder="https://huggingface.co/…/model.gguf" />
+    <button id="apply-model">Use this model</button>
+    <div id="model-saved" class="hint"></div>
+  </details>
+
+  <script type="module" src="popup.js"></script>
+</body>
+</html>

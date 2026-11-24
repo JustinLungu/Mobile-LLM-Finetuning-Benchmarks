@@ -1,0 +1,58 @@
+{
+  "manifest_version": 3,
+  "name": "Wilo",
+  "version": "0.3.0",
+  "description": "A friendly companion that helps you use social media on purpose. Runs entirely on your computer.",
+  "permissions": [
+    "offscreen",
+    "storage",
+    "unlimitedStorage",
+    "scripting"
+  ],
+  "host_permissions": [
+    "https://huggingface.co/*",
+    "https://*.huggingface.co/*",
+    "https://*.hf.co/*",
+    "http://localhost/*",
+    "http://127.0.0.1/*",
+    "https://www.instagram.com/*",
+    "https://www.youtube.com/*",
+    "https://www.tiktok.com/*",
+    "https://x.com/*",
+    "https://www.reddit.com/*",
+    "https://www.facebook.com/*"
+  ],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Wilo"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://www.instagram.com/*",
+        "https://www.youtube.com/*",
+        "https://www.tiktok.com/*",
+        "https://x.com/*",
+        "https://www.reddit.com/*",
+        "https://www.facebook.com/*"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ],
+  "content_security_policy": {
+    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'"
+  },
+  "cross_origin_embedder_policy": {
+    "value": "require-corp"
+  },
+  "cross_origin_opener_policy": {
+    "value": "same-origin"
+  }
+}
