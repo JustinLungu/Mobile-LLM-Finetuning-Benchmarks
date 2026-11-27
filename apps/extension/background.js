@@ -902,8 +902,6 @@ const handlers = {
   async done(msg, sender) {
     // In serial, so a check-in can't bring the plan or session back (see plan).
     await serial(async () => {
-      // Wilo closes this tab itself below: that's not the user leaving.
-      if (sender.tab) await markClosing(sender.tab.id);
       // Still discussing the plan: save that conversation and drop the plan.
       const plan = (await getPlans())[msg.site];
       if (plan) {
@@ -913,8 +911,24 @@ const handlers = {
       await closeConversation(msg.site, "done");
       const s = (await getSessions())[msg.site];
       if (s) await endSession(msg.site, s, "done");
+      // Wilo closes this tab itself below: that's not the user leaving. Marked
+      // last, so if anything above fails the tab is still tracked.
+      if (sender.tab) await markClosing(sender.tab.id);
     });
-    if (sender.tab) await chrome.tabs.remove(sender.tab.id);
+    if (!sender.tab) return {};
+    try {
+      await chrome.tabs.remove(sender.tab.id);
+    } catch (e) {
+      // Not closed (e.g. the user is dragging it): drop the mark, so the next
+      // check-in tracks it again.
+      await serial(async () => {
+        const tabSites = await getTabSites();
+        if (tabSites[sender.tab.id] !== null) return;
+        delete tabSites[sender.tab.id];
+        await saveOpen({ tabSites });
+      });
+      throw e;
+    }
     return {};
   },
 
