@@ -192,17 +192,24 @@ async function askWilo(site, userSays) {
     model: result && result.model,
     ms: result && result.ms,
   };
-  await updateSession(site, (s) => s && {
+  // Added to the session as it is now (re-read in serial): a check-in may
+  // have changed it while Wilo was thinking. If it ended meanwhile, it stays ended.
+  await serial(() => updateSession(site, (s) => s && {
     ...s,
     turns: [...s.turns, turn],
     declines: s.declines + (reply.decision === "decline" ? 1 : 0),
-  });
+  }));
   await appendLog({ kind: "negotiation", site, app: session.app, ...turn, historyTurns: history.length / 2, timings: result && result.timings });
-  if (reply.decision === "grant") {
-    await extend(site, reply.minutes);
-    await closeConversation(site, "granted", reply.minutes);
-  }
+  if (reply.decision === "grant") await serial(() => grant(site, reply.minutes, "granted"));
   return { reply, id: turn.id, fallback: !!error };
+}
+
+// More time agreed: extend the session and save the time-up conversation.
+// Not queued itself: callers run it in serial.
+async function grant(site, minutes, outcome) {
+  const session = await extend(site, minutes);
+  await closeConversation(site, outcome, minutes);
+  return session;
 }
 
 async function extend(site, minutes) {
@@ -389,6 +396,14 @@ function serial(task) {
   queue = run.catch(() => {});
   return run;
 }
+
+// Every read-then-write of what's open (sessions, plans, tabSites, tabSeen)
+// runs in serial, or a check-in's write (lastSeen) could put back what it read
+// just before: a session just started, a grant, a turn. The helpers
+// (updateSession, setPlan, closeConversation, endSession, endLeft...) are not
+// queued themselves, since queued steps call them: a step waiting for a later
+// step in the same queue would wait forever. So callers outside the queue
+// wrap them, and never wait for the model inside it.
 
 const GONE_ALARM = "wilo-gone:";
 const goneAlarm = (site) => GONE_ALARM + site;
@@ -705,7 +720,10 @@ const handlers = {
     // until the window ends (then the normal time-up).
     const free = freeWindowNow(profile.rules, new Date(now));
     if (free) {
-      const started = await updateSession(msg.site, () => newSession(app, "Free time (your rule)", "", free.minutesLeft, now, { free: true }));
+      // Re-checked in serial: another tab of the site may have just started one.
+      const started = await serial(async () => (await getSessions())[msg.site] ? null
+        : updateSession(msg.site, () => newSession(app, "Free time (your rule)", "", free.minutesLeft, now, { free: true })));
+      if (!started) return { session: (await getSessions())[msg.site], now };
       const d = new Date(now);
       await appendLog({ kind: "start", site: msg.site, app, intent: started.intent, minutes: free.minutesLeft, next: "", hour: d.getHours(), weekday: d.getDay(), free: true });
       const hobby = profile.onboarding.answers && profile.onboarding.answers.hobby;
@@ -786,9 +804,9 @@ const handlers = {
   async start(msg) {
     const minutes = Math.max(1, Math.min(240, Math.round(Number(msg.minutes) || 0)));
     const now = Date.now();
-    const session = await updateSession(msg.site, () =>
+    const session = await serial(() => updateSession(msg.site, () =>
       newSession(SITES[msg.site] || msg.site, String(msg.intent || "").slice(0, 200), String(msg.next || "").slice(0, 200), minutes, now),
-    );
+    ));
     const d = new Date(now);
     await appendLog({ kind: "start", site: msg.site, app: session.app, intent: session.intent, minutes, next: session.next, hour: d.getHours(), weekday: d.getDay() });
     return { session };
@@ -862,8 +880,7 @@ const handlers = {
   // The user took Wilo's counter-offer.
   async accept(msg) {
     const minutes = Math.max(1, Math.min(240, Math.round(Number(msg.minutes) || 0)));
-    const session = await extend(msg.site, minutes);
-    await closeConversation(msg.site, "took offer", minutes);
+    const session = await serial(() => grant(msg.site, minutes, "took offer"));
     return { session };
   },
 
@@ -898,20 +915,22 @@ const handlers = {
   // passed, so "time used" matches the plan for the screen and for Wilo.
   // Marked in the log so these can be told apart from real sessions.
   async "time-up-now"() {
-    const sessions = await getSessions();
-    const now = Date.now();
-    for (const s of Object.values(sessions)) {
-      const skip = Math.max(0, s.endsAt - now);
-      s.startedAt -= skip;
-      s.endsAt -= skip;
-      s.fastForwarded = true;
-    }
-    await saveOpen({ sessions });
+    await serial(async () => {
+      const sessions = await getSessions();
+      const now = Date.now();
+      for (const s of Object.values(sessions)) {
+        const skip = Math.max(0, s.endsAt - now);
+        s.startedAt -= skip;
+        s.endsAt -= skip;
+        s.fastForwarded = true;
+      }
+      await saveOpen({ sessions });
+    });
     return {};
   },
 
   async "end-session"(msg) {
-    await updateSession(msg.site, () => undefined);
+    await serial(() => updateSession(msg.site, () => undefined));
     return {};
   },
 
@@ -1034,4 +1053,4 @@ chrome.runtime.onInstalled.addListener((details) => {
 });
 
 // For debugging from the service worker's DevTools console (and dev/check_extension.py).
-globalThis.wilo = { restartModel, handlers, currentNote, getProfile, memoryNote, nextQuestion, capReply, getTabSites, endLeft, boot: () => serial(boot) };
+globalThis.wilo = { restartModel, handlers, currentNote, getProfile, memoryNote, nextQuestion, capReply, getTabSites, endLeft: (site) => serial(() => endLeft(site)), boot: () => serial(boot) };
