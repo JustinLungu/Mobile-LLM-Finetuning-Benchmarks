@@ -4,7 +4,7 @@ The Wilo prototype: a Chrome extension that asks what you're opening Instagram (
 
 ## For testers: install Wilo
 
-You get a file called `wilo-extension-0.3.0.zip`. Use **Google Chrome** (Edge and Brave should work too; Safari and Firefox don't), with 8 GB of RAM or more and good Wi-Fi for the first start.
+You get a file called `wilo-extension-0.3.1.zip`. Use **Google Chrome** (Edge and Brave should work too; Safari and Firefox don't), with 8 GB of RAM or more and good Wi-Fi for the first start.
 
 1. Unzip it. You get a folder `wilo-extension`. Keep it somewhere permanent (e.g. Documents): Chrome loads Wilo from this folder every time.
 2. In Chrome, open `chrome://extensions`.
