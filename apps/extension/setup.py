@@ -15,7 +15,7 @@ Both folders are git-ignored; re-run this after changing either source file.
 
     uv run apps/extension/setup.py --zip
 
-also packs the ready-to-load extension into dist/wilo-extension-<version>.zip,
+also packs the ready-to-load extension into dist/wilo-extension.zip,
 the file testers get: the `wilo-extension` folder to load in Chrome, and
 "Wilo tester guide.html" (guide/tester-guide.html with its pictures built in).
 """
@@ -135,8 +135,7 @@ def guide_single_file() -> str:
 def make_zip() -> None:
     if not UPLOAD_LINK.exists():
         print(f"warning: no {UPLOAD_LINK.name}, so testers' conversations won't be sent automatically")
-    version = json.loads((HERE / "manifest.json").read_text())["version"]
-    out = HERE / "dist" / f"wilo-extension-{version}.zip"
+    out = HERE / "dist" / "wilo-extension.zip"
     out.parent.mkdir(exist_ok=True)
     with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:
         for path in sorted(HERE.rglob("*")):

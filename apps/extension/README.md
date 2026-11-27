@@ -4,7 +4,7 @@ The Wilo prototype: a Chrome extension that asks what you're opening Instagram (
 
 ## For testers: install Wilo
 
-You get a file called `wilo-extension-0.3.1.zip`. Use **Google Chrome** (Edge and Brave should work too; Safari and Firefox don't), with 8 GB of RAM or more and good Wi-Fi for the first start.
+You get a file called `wilo-extension.zip`. Use **Google Chrome** (Edge and Brave should work too; Safari and Firefox don't), with 8 GB of RAM or more and good Wi-Fi for the first start.
 
 1. Unzip it. You get a folder `wilo-extension`. Keep it somewhere permanent (e.g. Documents): Chrome loads Wilo from this folder every time.
 2. In Chrome, open `chrome://extensions`.
@@ -28,18 +28,22 @@ You get a file called `wilo-extension-0.3.1.zip`. Use **Google Chrome** (Edge an
 
 **What Wilo can access** (shown in Chrome as its permissions): the six sites above, to show its screen there (it doesn't read the pages); Hugging Face, to download its model; and `drive.switch.ch`, used only when you click Send. It stores your conversations, settings and its model inside Chrome on your computer.
 
+**Updating to a new version:** first send your conversations (see above), to be safe. Then unzip the new file and replace the contents of your existing `wilo-extension` folder with the new `wilo-extension` folder's contents, keeping the folder in the same place. In `chrome://extensions`, click the reload icon on the Wilo card. Your conversations and the downloaded model are kept.
+
 **If something goes wrong:** open `chrome://extensions`, click the reload icon on the Wilo card, and tell us what happened (a screenshot helps).
 
 ## For the team: build and test
 
 ```bash
 uv run apps/extension/setup.py          # downloads wllama, writes generated/config.js
-uv run apps/extension/setup.py --zip    # also makes dist/wilo-extension-<version>.zip for testers
+uv run apps/extension/setup.py --zip    # also makes dist/wilo-extension.zip for testers
 uv run apps/extension/dev/check_extension.py   # end-to-end check in headless Chrome
 uv run apps/extension/dev/check_open_tabs.py   # Wilo in tabs open before an install or update
 uv run apps/extension/dev/check_memory.py      # what Wilo learns, and its check-in questions
 uv run apps/extension/dev/check_between_sessions.py  # welcome back after a session, free-time rules
 ```
+
+**Extension ID.** `manifest.json` has a fixed `key`, so Wilo's ID is always `oogfgemnlcnibaheccinddobcfpbjgcg`, wherever the folder is. Its stored data (conversations, the cached model) belongs to that ID, so a tester who moves the folder or loads a new copy keeps everything. Don't change or remove the key. The matching private key isn't needed (it's only for packing a .crx) and wasn't kept.
 
 **Receiving testers' conversations (SWITCHdrive).** The **Send** button uploads `wilo-<study id>-<time>.json` to an upload-only SWITCHdrive share. Put the share link (e.g. `https://drive.switch.ch/index.php/s/AbC123`) in `apps/extension/upload-link.txt` (git-ignored) before running `setup.py`; without it the button saves a file as before. The share must be **File drop (upload only)** with **no password**: the link ships inside the extension, so anyone could find it, but with upload-only they can only add files, never read them. Each send holds the whole log, so the newest file per study ID is complete.
 
