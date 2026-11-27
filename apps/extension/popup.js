@@ -139,14 +139,41 @@ async function init() {
     window.close();
   });
 
-  $("download").addEventListener("click", async () => {
+  // Send to the team's SWITCHdrive folder; if that's not possible, fall back
+  // to saving a file the tester emails us.
+  const saveCopy = async () => {
     const { log = [] } = await chrome.storage.local.get("log");
     const blob = new Blob([JSON.stringify(log, null, 2)], { type: "application/json" });
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
     a.download = `wilo-conversations-${new Date().toISOString().slice(0, 10)}.json`;
     a.click();
+  };
+  const showSent = async () => {
+    const { lastSent } = await chrome.storage.local.get("lastSent");
+    const { id } = (await chrome.runtime.sendMessage({ type: "study-id" })) || {};
+    $("sent").textContent = (lastSent ? `Last sent: ${new Date(lastSent).toLocaleString()}. ` : "") + (id ? `Your study ID: ${id}` : "");
+  };
+  showSent();
+  $("download").addEventListener("click", async () => {
+    if (!CONFIG.upload) {
+      await saveCopy();
+      $("sent").textContent = "Saved to your Downloads folder. Please email it to us.";
+      return;
+    }
+    $("download").disabled = true;
+    $("sent").textContent = "Sending…";
+    const res = await chrome.runtime.sendMessage({ type: "send-log" });
+    $("download").disabled = false;
+    if (res && res.sentAt) {
+      await showSent();
+      $("sent").textContent = "✅ Sent, thank you! " + $("sent").textContent;
+    } else {
+      await saveCopy();
+      $("sent").textContent = `❌ Couldn't send (${(res && res.error) || "no answer"}). We saved a file to your Downloads folder instead: please email it to us.`;
+    }
   });
+  $("save-copy").addEventListener("click", saveCopy);
 
   $("clear").addEventListener("click", async () => {
     if (confirm("Delete all your saved conversations with Wilo? This can't be undone.")) {

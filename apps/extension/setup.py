@@ -61,6 +61,26 @@ def fetch_wllama() -> None:
     print("wllama: checksum OK, files in vendor/")
 
 
+UPLOAD_LINK = HERE / "upload-link.txt"
+
+
+def upload_target() -> dict | None:
+    """The SWITCHdrive upload-only share from upload-link.txt (git-ignored).
+
+    The file holds one line, the share link, e.g. https://drive.switch.ch/index.php/s/AbC123.
+    Testers' extensions upload to it with Nextcloud's public WebDAV.
+    """
+    import re
+
+    if not UPLOAD_LINK.exists():
+        return None
+    link = UPLOAD_LINK.read_text().strip()
+    match = re.fullmatch(r"(https://[^/]+)(?:/index\.php)?/s/([A-Za-z0-9]+)/?", link)
+    if not match:
+        raise SystemExit(f"error: {UPLOAD_LINK.name} should hold a share link like https://drive.switch.ch/index.php/s/AbC123, got {link!r}")
+    return {"base": match.group(1), "token": match.group(2)}
+
+
 def write_config() -> None:
     # The memory note is per user: the extension adds the user's own note after
     # memory_header, in place of the training data's example.
@@ -82,6 +102,8 @@ def write_config() -> None:
         "models": models,
         # Best judgment of the base models in our browser tests (README).
         "defaultModel": "llama3.2-3b",
+        # Where "Send my conversations" uploads to (None: it saves a file instead).
+        "upload": upload_target(),
     }
     out = HERE / "generated"
     out.mkdir(exist_ok=True)
@@ -90,11 +112,12 @@ def write_config() -> None:
         "// models/registry.yaml. Don't edit by hand: re-run the script.\n"
         f"export const CONFIG = {json.dumps(config, indent=2, ensure_ascii=False)};\n"
     )
-    print(f"generated/config.js written ({len(models)} models)")
+    upload = config["upload"]
+    print(f"generated/config.js written ({len(models)} models, " + (f"uploads to {upload['base']}" if upload else f"no {UPLOAD_LINK.name}: conversations are saved as a file") + ")")
 
 
 # Developer-only files that testers don't need.
-NOT_SHIPPED = {"setup.py", "dev", "dist", ".gitignore", "README.md", "guide"}
+NOT_SHIPPED = {"setup.py", "dev", "dist", ".gitignore", "README.md", "guide", "upload-link.txt"}
 GUIDE = HERE / "guide" / "tester-guide.html"
 
 
@@ -112,6 +135,8 @@ def guide_single_file() -> str:
 
 
 def make_zip() -> None:
+    if not UPLOAD_LINK.exists():
+        print(f"warning: no {UPLOAD_LINK.name}, so testers' conversations won't be sent automatically")
     version = json.loads((HERE / "manifest.json").read_text())["version"]
     out = HERE / "dist" / f"wilo-extension-{version}.zip"
     out.parent.mkdir(exist_ok=True)

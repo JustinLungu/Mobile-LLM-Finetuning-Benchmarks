@@ -24,7 +24,7 @@ You get a file called `wilo-extension-0.3.0.zip`. Use **Google Chrome** (Edge an
 - Rate Wilo's replies with 👍 or 👎. That tells us which answers to teach it.
 - Expect Wilo to take 5–25 seconds to answer, depending on your computer. It's thinking on your computer, not in the cloud.
 
-**Sending us your results:** your conversations are saved on your computer as you go; nothing is sent anywhere. At the end of the study, click the Wilo icon → **For the study** → **Save my conversations for the Wilo team**, and send us the file from your Downloads folder. It contains what you told Wilo and what it answered, your ratings, your answers to its questions and free-time settings, and when you used which site and for how long. Nothing else: Wilo never sees what you look at on these sites. Before sending, you can open the file and read it, or delete it via **Delete my conversations**.
+**Sending us your results:** your conversations are saved on your computer as you go; nothing leaves it until you send them. At the end of the study (or whenever we ask), click the Wilo icon → **For the study** → **Send my conversations to the Wilo team**. They go straight to the team's private SWITCHdrive folder; there's nothing else to do. If sending fails, Wilo saves a file to your Downloads folder instead: please email it to us. What's sent: what you told Wilo and what it answered, your ratings, your answers to its questions and free-time settings, and when you used which site and for how long, with a random study ID instead of your name. Nothing else: Wilo never sees what you look at on these sites. To read it first, click **Save a copy on this computer**; to remove it, **Delete my conversations**.
 
 **If something goes wrong:** open `chrome://extensions`, click the reload icon on the Wilo card, and tell us what happened (a screenshot helps).
 
@@ -38,6 +38,8 @@ uv run apps/extension/dev/check_open_tabs.py   # Wilo in tabs open before an ins
 uv run apps/extension/dev/check_memory.py      # what Wilo learns, and its check-in questions
 uv run apps/extension/dev/check_between_sessions.py  # welcome back after a session, free-time rules
 ```
+
+**Receiving testers' conversations (SWITCHdrive).** The **Send** button uploads `wilo-<study id>-<time>.json` to an upload-only SWITCHdrive share. Put the share link (e.g. `https://drive.switch.ch/index.php/s/AbC123`) in `apps/extension/upload-link.txt` (git-ignored) before running `setup.py`; without it the button saves a file as before. The share must be **File drop (upload only)** with **no password**: the link ships inside the extension, so anyone could find it, but with upload-only they can only add files, never read them. Each send holds the whole log, so the newest file per study ID is complete.
 
 `setup.py` takes Wilo's rules from `spec/bench_prompts.json` and the model links from `models/registry.yaml`, so the extension uses the same prompt and model files as the benchmarks and the training data. To load your working copy, use **Load unpacked** on `apps/extension/` itself. After editing files, click the reload icon on `chrome://extensions`.
 

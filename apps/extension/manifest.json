@@ -13,6 +13,7 @@
     "https://huggingface.co/*",
     "https://*.huggingface.co/*",
     "https://*.hf.co/*",
+    "https://drive.switch.ch/*",
     "http://localhost/*",
     "http://127.0.0.1/*",
     "https://www.instagram.com/*",

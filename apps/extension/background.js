@@ -574,7 +574,40 @@ const handlers = {
     await restartModel();
     return {};
   },
+
+  // Popup: send the whole log to the team's upload-only SWITCHdrive folder.
+  // Done here, not in the popup, so it finishes even if the popup closes.
+  async "send-log"() {
+    if (!CONFIG.upload) return { error: "not set up" };
+    const id = await studyId();
+    const name = `wilo-${id}-${new Date().toISOString().replace(/[:.]/g, "-")}.json`;
+    const body = JSON.stringify({ studyId: id, version: chrome.runtime.getManifest().version, log: await getLog() }, null, 2);
+    const res = await fetch(`${CONFIG.upload.base}/public.php/dav/files/${CONFIG.upload.token}/${name}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json", "X-Requested-With": "XMLHttpRequest" },
+      body,
+    });
+    if (!res.ok) throw new Error(`upload failed (HTTP ${res.status})`);
+    const sentAt = new Date().toISOString();
+    await chrome.storage.local.set({ lastSent: sentAt });
+    return { sentAt, file: name };
+  },
+
+  async "study-id"() {
+    return { id: await studyId() };
+  },
 };
+
+// A random ID per install, so the team can tell testers' files apart (and
+// delete someone's data on request) without knowing who they are.
+async function studyId() {
+  let { studyId: id } = await chrome.storage.local.get("studyId");
+  if (!id) {
+    id = crypto.randomUUID().slice(0, 8);
+    await chrome.storage.local.set({ studyId: id });
+  }
+  return id;
+}
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.target === "offscreen") return false; // meant for the model page
