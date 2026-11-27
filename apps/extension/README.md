@@ -1,10 +1,10 @@
 # Wilo Chrome extension
 
-The Wilo prototype: a Chrome extension that asks what you're opening Instagram (or YouTube, TikTok, X, Reddit, Facebook) for and for how long. When time is up, you can ask Wilo for more. Wilo's replies come from a small language model that runs **on your computer, inside Chrome**. Nothing is sent to a server.
+The Wilo prototype: a Chrome extension that asks what you're opening Instagram (or YouTube, TikTok, X, Reddit, Facebook) for and for how long. When time is up, you can ask Wilo for more. Wilo's replies come from a small language model that runs **on your computer, inside Chrome**, not on a server. Conversations stay on the computer. The final app will be fully local; this test version adds one exception, the **Send my conversations** button, which uploads the tester's conversations to the team, only when clicked.
 
 ## For testers: install Wilo
 
-You get a file called `wilo-extension-0.3.0.zip`. Use **Google Chrome** (Edge and Brave should work too; Safari and Firefox don't), with 8 GB of RAM or more and good Wi-Fi for the first start.
+You get a file called `wilo-extension.zip`. Use **Google Chrome** (Edge and Brave should work too; Safari and Firefox don't), with 8 GB of RAM or more and good Wi-Fi for the first start.
 
 1. Unzip it. You get a folder `wilo-extension`. Keep it somewhere permanent (e.g. Documents): Chrome loads Wilo from this folder every time.
 2. In Chrome, open `chrome://extensions`.
@@ -24,7 +24,11 @@ You get a file called `wilo-extension-0.3.0.zip`. Use **Google Chrome** (Edge an
 - Rate Wilo's replies with 👍 or 👎. That tells us which answers to teach it.
 - Expect Wilo to take 5–25 seconds to answer, depending on your computer. It's thinking on your computer, not in the cloud.
 
-**Sending us your results:** your conversations are saved on your computer as you go; nothing is sent anywhere. At the end of the study, click the Wilo icon → **For the study** → **Save my conversations for the Wilo team**, and send us the file from your Downloads folder. It contains what you told Wilo and what it answered, your ratings, your answers to its questions and free-time settings, and when you used which site and for how long. Nothing else: Wilo never sees what you look at on these sites. Before sending, you can open the file and read it, or delete it via **Delete my conversations**.
+**Sending us your results:** your conversations are saved on your computer as you go; nothing leaves it until you send them. At the end of the study (or whenever you want, or we ask), click the Wilo icon → **For the study** → **Send my conversations to the Wilo team**. They go straight to the team's private SWITCHdrive folder; there's nothing else to do. If sending fails, Wilo saves a file to your Downloads folder instead: please email it to us. What's sent: what you told Wilo and what it answered, your ratings, your answers to its questions and free-time settings, and when you used which site and for how long, plus Wilo's version, which model answered and how long it took, with a random study ID instead of your name. Nothing else: Wilo never sees what you look at on these sites. To read the data first, click **Save a copy on this computer**. **Delete my conversations** deletes them from your computer; to have what you already sent deleted, email us with your study ID (shown under the Send button).
+
+**What Wilo can access** (shown in Chrome as its permissions): the six sites above, to show its screen there (it doesn't read the pages); Hugging Face, to download its model; and `drive.switch.ch`, used only when you click Send. It stores your conversations, settings and its model inside Chrome on your computer.
+
+**Updating to a new version:** first send your conversations (see above), to be safe. Then unzip the new file and replace the contents of your existing `wilo-extension` folder with the new `wilo-extension` folder's contents, keeping the folder in the same place. In `chrome://extensions`, click the reload icon on the Wilo card. Your conversations and the downloaded model are kept.
 
 **If something goes wrong:** open `chrome://extensions`, click the reload icon on the Wilo card, and tell us what happened (a screenshot helps).
 
@@ -32,12 +36,16 @@ You get a file called `wilo-extension-0.3.0.zip`. Use **Google Chrome** (Edge an
 
 ```bash
 uv run apps/extension/setup.py          # downloads wllama, writes generated/config.js
-uv run apps/extension/setup.py --zip    # also makes dist/wilo-extension-<version>.zip for testers
+uv run apps/extension/setup.py --zip    # also makes dist/wilo-extension.zip for testers
 uv run apps/extension/dev/check_extension.py   # end-to-end check in headless Chrome
 uv run apps/extension/dev/check_open_tabs.py   # Wilo in tabs open before an install or update
 uv run apps/extension/dev/check_memory.py      # what Wilo learns, and its check-in questions
 uv run apps/extension/dev/check_between_sessions.py  # welcome back after a session, free-time rules
 ```
+
+**Extension ID.** `manifest.json` has a fixed `key`, so Wilo's ID is always `oogfgemnlcnibaheccinddobcfpbjgcg`, wherever the folder is. Its stored data (conversations, the cached model) belongs to that ID, so a tester who moves the folder or loads a new copy keeps everything. Don't change or remove the key. The matching private key isn't needed (it's only for packing a .crx) and wasn't kept.
+
+**Receiving testers' conversations (SWITCHdrive).** The **Send** button uploads `wilo-<study id>-<time>.json` to an upload-only SWITCHdrive share. Put the share link (e.g. `https://drive.switch.ch/index.php/s/AbC123`) in `apps/extension/upload-link.txt` (git-ignored) before running `setup.py`; without it the button saves a file as before. The share must be **File drop (upload only)** with **no password**: the link ships inside the extension, so anyone could find it, but with upload-only they can only add files, never read them. Each send holds the whole log, so the newest file per study ID is complete.
 
 `setup.py` takes Wilo's rules from `spec/bench_prompts.json` and the model links from `models/registry.yaml`, so the extension uses the same prompt and model files as the benchmarks and the training data. To load your working copy, use **Load unpacked** on `apps/extension/` itself. After editing files, click the reload icon on `chrome://extensions`.
 

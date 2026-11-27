@@ -2,3 +2,5 @@
 vendor/
 generated/
 dist/
+# The SWITCHdrive upload link (setup.py reads it); not in git
+upload-link.txt

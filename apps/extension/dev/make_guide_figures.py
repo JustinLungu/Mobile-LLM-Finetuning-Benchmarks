@@ -137,7 +137,7 @@ def main() -> int:
         time.sleep(0.5)
         shoot(chrome, page, "7-free-time-note.png", card_clip(chrome, page, toast, pad=12))
 
-        # 8. The popup's study section, with the save button.
+        # 8. The popup's study section, with the send button.
         chrome.evaluate(sw, "chrome.storage.session.set({model: {state: 'ready', key: 'llama3.2-3b', gpu: true, gpuNote: ''}})")
         chrome.call("Page.reload", {}, popup)
         time.sleep(1.5)

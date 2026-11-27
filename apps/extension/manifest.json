@@ -1,8 +1,9 @@
 {
   "manifest_version": 3,
   "name": "Wilo",
-  "version": "0.3.0",
-  "description": "A friendly companion that helps you use social media on purpose. Runs entirely on your computer.",
+  "version": "0.3.1",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA3oENdQRxTTf58EqOVLTXBdFMU7zqbi5tKyq7au7NDhNsCefnbfbWXegqD8yTKmzTftz17E9pP49Xd1qVgmP7PFCQi97NOAavAkce1jJVTC0V/t1f9sG51SggDualAZsJtwZTN106DPx84Gd5vjoE+ihLDNjRCqeLCpK0gxkGfOwrO9v+26mY8cblH5YlRN9y2YcczhcpqCnBeKT/CklAdMkT5dvaTGSDWd0rDNm1TzBQFfA/ynTc4M7hJAz0qcCS1AOEiT7b2y9qsp7W5u1vyrFo+rHDD1MFxpLypPsHzMLOqWh39rtQJ5faf6nqpAjA9dfowmLr4gU4pdvtVxhmGQIDAQAB",
+  "description": "Companion to help you use social media with purpose. Runs entirely on-device; conversations reach the team only when you click Send.",
   "permissions": [
     "offscreen",
     "storage",
@@ -13,6 +14,7 @@
     "https://huggingface.co/*",
     "https://*.huggingface.co/*",
     "https://*.hf.co/*",
+    "https://drive.switch.ch/*",
     "http://localhost/*",
     "http://127.0.0.1/*",
     "https://www.instagram.com/*",
