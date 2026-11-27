@@ -215,7 +215,7 @@ async function init() {
   $("clear").addEventListener("click", async () => {
     if (confirm("Delete all your saved conversations and comments from this computer? This can't be undone. (To delete what you already sent, email us with your study ID.)")) {
       clearTimeout(draftTimer);
-      await chrome.storage.local.set({ log: [] });
+      await chrome.runtime.sendMessage({ type: "clear-log" });
       await chrome.storage.local.remove("commentDraft");
       $("comment").value = "";
     }
