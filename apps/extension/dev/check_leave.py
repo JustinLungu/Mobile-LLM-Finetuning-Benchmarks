@@ -15,6 +15,8 @@ minimum), so the real alarm path ends the session. Cases:
  4. Reload and same-site navigation: no leave; going to example.com: navigated-away.
  5. Instagram -> YouTube in the same tab: Instagram leave.
  6. Back within the grace: return (awayS), the session continues.
+    b) Back button from example.com, then the alarm at once (before the
+    page's next check-in): one return, no session-end.
  7. Time's up, with an unsaved turn, then close: leave (time-up, minutesOver,
     inConversation); after the grace, the conversation is saved as "left".
  8. Plan review, then close: leave (plan-review); after the grace, the plan
@@ -262,6 +264,39 @@ def main() -> int:
         c.fire(IG)  # a stale alarm must not end it
         time.sleep(2)
         c.ok(6, not ends(c.entries(n)) and c.state(IG)["session"], "no session-end (also after a stale alarm)")
+        c.close(tab)
+        wait_for(lambda: len(leaves(c.entries(n))) == 2, 20, every=0.3, what="cleanup leave")
+        c.fire(IG)
+        c.wait_entry(n, lambda e: e["kind"] == "session-end", "cleanup session-end")
+
+        # 6b. Back button within the grace, then the grace alarm right away.
+        print("6b. Back from example.com, then the alarm at once")
+        c.reset()
+        c.start(IG)
+        tab, page = c.open(IG)
+        c.wait_tracked(IG, 1)
+        chrome.evaluate(page, "window.wiloBfcache = 1")  # still there after Back only if the page came from the cache
+        n = c.log_len()
+        chrome.call("Page.navigate", {"url": "https://example.com/"}, page)
+        c.wait_entry(n, lambda e: e["kind"] == "leave", "leave to example.com")
+        time.sleep(2)
+        hist = chrome.call("Page.getNavigationHistory", {}, page)
+        chrome.call("Page.navigateToHistoryEntry", {"entryId": hist["entries"][hist["currentIndex"] - 1]["id"]}, page)
+
+        def on_site():
+            try:
+                return chrome.evaluate(page, "location.hostname") == IG
+            except Exception:
+                return False  # mid-navigation
+
+        wait_for(on_site, 20, every=0.1, what="back on Instagram")
+        c.fire(IG)  # the grace runs out just after Back, before the page's next check-in
+        cached = chrome.evaluate(page, "window.wiloBfcache === 1")
+        r = c.wait_entry(n, lambda e: e["kind"] == "return", "return after Back", timeout=10)
+        time.sleep(3)
+        got = c.entries(n)
+        c.ok(6, len([x for x in got if x["kind"] == "return"]) == 1 and not ends(got) and c.state(IG)["session"],
+             f"one return (awayS={r['awayS']}), no session-end; page from the back/forward cache: {cached}")
         c.close(tab)
         wait_for(lambda: len(leaves(c.entries(n))) == 2, 20, every=0.3, what="cleanup leave")
         c.fire(IG)

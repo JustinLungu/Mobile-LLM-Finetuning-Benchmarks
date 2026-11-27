@@ -731,5 +731,10 @@
     if (connected() && newest()) send("status");
     else dispose();
   }, CHECK_IN_MS);
+  // Back to this page from the browser's cache (e.g. the Back button): this
+  // script doesn't start again, so check in now, not at the next interval.
+  window.addEventListener("pageshow", (e) => {
+    if (e.persisted && !disposed && newest()) check();
+  });
   check();
 })();

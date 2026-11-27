@@ -578,12 +578,18 @@ chrome.tabs.onRemoved.addListener((tabId, { isWindowClosing }) => {
 
 // A tracked tab now shows another site (its URL is hidden from Wilo on sites
 // it has no access to). Reloads and moves within the site don't count.
+// A tab that now shows a watched site counts as a check-in right away: going
+// Back can restore the page from the browser's cache without running
+// content.js again, and its next check-in can be 30 s away, after the grace.
 chrome.tabs.onUpdated.addListener((tabId, change, tab) => {
   if (!("url" in change) && !("status" in change)) return;
   const now = Date.now();
   serial(async () => {
     const site = (await getTabSites())[tabId];
-    if (site && hostOf(tab.url) !== site) await untrackTab(tabId, "navigated-away", now);
+    const host = hostOf(tab.url);
+    if (site === null || site === host) return; // being closed (I'm done), or still on the site
+    if (host in SITES) await checkIn(host, tab, now); // also logs the leave of the site it was on
+    else if (site) await untrackTab(tabId, "navigated-away", now);
   });
 });
 
@@ -606,7 +612,17 @@ chrome.alarms.onAlarm.addListener((alarm) => {
     if (Object.values(await getTabSites()).includes(site)) return; // back
     const s = (await getSessions())[site];
     const plan = (await getPlans())[site];
-    if ((s && s.leftAt) || (plan && plan.leftAt)) await endLeft(site);
+    const leftAt = (s && s.leftAt) ?? (plan && plan.leftAt);
+    if (!leftAt) return;
+    // A tab on the site that no event or check-in has reported yet: the user
+    // is back, so the session continues.
+    const now = Date.now();
+    const tabSites = await getTabSites();
+    const tab = (await chrome.tabs.query({})).find((t) => tabSites[t.id] !== null && hostOf(t.url) === site);
+    if (!tab) return endLeft(site);
+    await trackTab(tab.id, site, now);
+    await seeTab(tab.id, now);
+    await logReturn(site, leftAt, now);
   });
 });
 
