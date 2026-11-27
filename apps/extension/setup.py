@@ -66,7 +66,7 @@ UPLOAD_LINK = HERE / "upload-link.txt"
 
 
 def upload_target() -> dict | None:
-    """The SWITCHdrive upload-only share from upload-link.txt (git-ignored).
+    """The SWITCHdrive upload-only share from upload-link.txt (committed; the link is public by design).
 
     The file holds one line, the share link, e.g. https://drive.switch.ch/index.php/s/AbC123.
     Testers' extensions upload to it with Nextcloud's public WebDAV.
