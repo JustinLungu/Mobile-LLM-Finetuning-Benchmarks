@@ -26,4 +26,4 @@ button.main { width: 100%; background: var(--accent); border-color: var(--accent
 .rule-form input { flex: 1; }
 .rule { display: flex; justify-content: space-between; align-items: center; margin: 4px 0; }
 .rule button { margin: 0; padding: 3px 8px; font-size: 12px; }
-#rule-add { width: 100%; }
+#rule-add, button.wide { width: 100%; }
