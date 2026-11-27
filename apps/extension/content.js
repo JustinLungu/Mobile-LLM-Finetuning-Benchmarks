@@ -206,7 +206,8 @@
       <div class="row">
         <button class="alt" id="skip">Not now</button>
         <button class="main" id="sure">Sure</button>
-      </div>`;
+      </div>
+      <p class="note">🔒 I think on this computer, and our conversations stay here; nothing is sent unless you click "Send my conversations" in my menu (for the test version only).</p>`;
     root.getElementById("skip").addEventListener("click", () => {
       send("onboarding", { answers: null });
       then();

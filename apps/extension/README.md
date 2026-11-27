@@ -1,6 +1,6 @@
 # Wilo Chrome extension
 
-The Wilo prototype: a Chrome extension that asks what you're opening Instagram (or YouTube, TikTok, X, Reddit, Facebook) for and for how long. When time is up, you can ask Wilo for more. Wilo's replies come from a small language model that runs **on your computer, inside Chrome**. Nothing is sent to a server.
+The Wilo prototype: a Chrome extension that asks what you're opening Instagram (or YouTube, TikTok, X, Reddit, Facebook) for and for how long. When time is up, you can ask Wilo for more. Wilo's replies come from a small language model that runs **on your computer, inside Chrome**, not on a server. Conversations stay on the computer. The final app will be fully local; this test version adds one exception, the **Send my conversations** button, which uploads the tester's conversations to the team, only when clicked.
 
 ## For testers: install Wilo
 
@@ -24,7 +24,9 @@ You get a file called `wilo-extension-0.3.0.zip`. Use **Google Chrome** (Edge an
 - Rate Wilo's replies with 👍 or 👎. That tells us which answers to teach it.
 - Expect Wilo to take 5–25 seconds to answer, depending on your computer. It's thinking on your computer, not in the cloud.
 
-**Sending us your results:** your conversations are saved on your computer as you go; nothing leaves it until you send them. At the end of the study (or whenever we ask), click the Wilo icon → **For the study** → **Send my conversations to the Wilo team**. They go straight to the team's private SWITCHdrive folder; there's nothing else to do. If sending fails, Wilo saves a file to your Downloads folder instead: please email it to us. What's sent: what you told Wilo and what it answered, your ratings, your answers to its questions and free-time settings, and when you used which site and for how long, with a random study ID instead of your name. Nothing else: Wilo never sees what you look at on these sites. To read it first, click **Save a copy on this computer**; to remove it, **Delete my conversations**.
+**Sending us your results:** your conversations are saved on your computer as you go; nothing leaves it until you send them. At the end of the study (or whenever you want, or we ask), click the Wilo icon → **For the study** → **Send my conversations to the Wilo team**. They go straight to the team's private SWITCHdrive folder; there's nothing else to do. If sending fails, Wilo saves a file to your Downloads folder instead: please email it to us. What's sent: what you told Wilo and what it answered, your ratings, your answers to its questions and free-time settings, and when you used which site and for how long, plus Wilo's version, which model answered and how long it took, with a random study ID instead of your name. Nothing else: Wilo never sees what you look at on these sites. To read the data first, click **Save a copy on this computer**. **Delete my conversations** deletes them from your computer; to have what you already sent deleted, email us with your study ID (shown under the Send button).
+
+**What Wilo can access** (shown in Chrome as its permissions): the six sites above, to show its screen there (it doesn't read the pages); Hugging Face, to download its model; and `drive.switch.ch`, used only when you click Send. It stores your conversations, settings and its model inside Chrome on your computer.
 
 **If something goes wrong:** open `chrome://extensions`, click the reload icon on the Wilo card, and tell us what happened (a screenshot helps).
 

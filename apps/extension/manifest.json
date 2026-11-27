@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Wilo",
   "version": "0.3.0",
-  "description": "A friendly companion that helps you use social media on purpose. Runs entirely on your computer.",
+  "description": "Companion to help you use social media with purpose. Runs entirely on-device; conversations reach the team only when you click Send.",
   "permissions": [
     "offscreen",
     "storage",

@@ -176,7 +176,7 @@ async function init() {
   $("save-copy").addEventListener("click", saveCopy);
 
   $("clear").addEventListener("click", async () => {
-    if (confirm("Delete all your saved conversations with Wilo? This can't be undone.")) {
+    if (confirm("Delete all your saved conversations with Wilo from this computer? This can't be undone. (To delete what you already sent, email us with your study ID.)")) {
       await chrome.storage.local.set({ log: [] });
     }
   });
