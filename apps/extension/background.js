@@ -992,8 +992,20 @@ const handlers = {
   },
 
   // Popup: "Delete my conversations". Here, in the log's queue, so an append
-  // already under way can't put the deleted log back.
+  // already under way can't put the deleted log back. Open sessions and plans
+  // keep their turns (and the copy in openState) until they end, then log
+  // them: those are dropped first, so nothing said before the delete is logged
+  // later. The session itself goes on; Wilo just no longer remembers what was
+  // said. Dropped in serial, after boot(), so anything boot logs from the old
+  // copy is logged before the log is emptied.
   async "clear-log"() {
+    await serial(async () => {
+      const sessions = await getSessions();
+      for (const s of Object.values(sessions)) Object.assign(s, { turns: [], conversationFrom: 0 });
+      const plans = await getPlans();
+      for (const p of Object.values(plans)) p.turns = [];
+      await saveOpen({ sessions, plans });
+    });
     await changeLog(() => []);
     return { ok: true };
   },
