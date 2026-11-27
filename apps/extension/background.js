@@ -4,7 +4,8 @@
 // Chrome can stop this script whenever it is idle, so all state lives in
 // chrome.storage, never in variables:
 //   storage.session  sessions (per site), model status. Cleared when Chrome closes.
-//   storage.local    settings (model, memory note) and the log. Kept.
+//   storage.local    settings (model, memory note), the log, and a copy of
+//                    the open sessions (openState). Kept.
 
 import { CONFIG } from "./generated/config.js";
 import { PLAN_SCHEMA, REPLY_SCHEMA, SITES, capPlan, capReply, modelByKey, planText, situationText, systemPrompt } from "./wilo.js";
@@ -41,6 +42,21 @@ async function currentNote() {
   return memoryNote(await getProfile(), await getLog());
 }
 
+// What's open (sessions, plans, which tab shows which site) lives in
+// storage.session, which Chrome empties when it quits and when the extension
+// is updated or reloaded. Every change is also copied to storage.local
+// ("openState"), so the next start can end what was left open, and an update
+// can put it back. Done here, in the same step as the write, rather than in a
+// storage.onChanged listener: a listener runs later, out of order with the
+// queued tab events, and may not run at all when Chrome is quitting.
+// Not copied until boot() has settled the old copy ("booted"), so an early
+// write can't overwrite what is still to be settled.
+async function saveOpen(values) {
+  await chrome.storage.session.set(values);
+  const { booted, ...open } = await chrome.storage.session.get(["sessions", "plans", "tabSites", "tabSeen", "booted"]);
+  if (booted) await chrome.storage.local.set({ openState: open });
+}
+
 async function getSessions() {
   const { sessions } = await chrome.storage.session.get("sessions");
   return sessions || {};
@@ -50,7 +66,7 @@ async function updateSession(site, change) {
   const sessions = await getSessions();
   sessions[site] = change(sessions[site]);
   if (!sessions[site]) delete sessions[site];
-  await chrome.storage.session.set({ sessions });
+  await saveOpen({ sessions });
   return sessions[site];
 }
 
@@ -213,7 +229,7 @@ async function setPlan(site, plan) {
   const plans = await getPlans();
   if (plan) plans[site] = plan;
   else delete plans[site];
-  await chrome.storage.session.set({ plans });
+  await saveOpen({ plans });
 }
 
 async function reviewPlan(site, userSays) {
@@ -258,7 +274,12 @@ async function reviewPlan(site, userSays) {
     model: result && result.model,
     ms: result && result.ms,
   };
-  await setPlan(site, { ...plan, turns: [...plan.turns, turn] });
+  // Add the turn to the plan as it is now: the user may have left (or come
+  // back) while Wilo was thinking. If the plan ended meanwhile, it stays ended.
+  await serial(async () => {
+    const current = (await getPlans())[site];
+    if (current) await setPlan(site, { ...current, turns: [...current.turns, turn] });
+  });
   await appendLog({ kind: "plan-review", site, app: plan.app, ...turn, timings: result && result.timings });
   return { reply, id: turn.id, fallback: !!error };
 }
@@ -282,9 +303,10 @@ function newSession(app, intent, next, minutes, now, extra = {}) {
 
 // A session is over (the user clicked "I'm done", or left the site): record
 // how it went. Wilo learns typical session lengths and patterns from these.
-async function endSession(site, s, reason) {
+// how: how they left (closed-tab, navigated-away, ..., unknown), null for done.
+async function endSession(site, s, reason, how = null) {
   const started = new Date(s.startedAt);
-  const endedAt = reason === "done" ? Date.now() : s.lastSeen;
+  const endedAt = reason === "done" ? Date.now() : (s.leftAt ?? s.lastSeen);
   const answered = (s.turns || []).filter((t) => t.reply);
   const last = answered[answered.length - 1];
   await appendLog({
@@ -302,6 +324,7 @@ async function endSession(site, s, reason) {
     startHour: started.getHours(),
     weekday: started.getDay(),
     reason,
+    how,
     fastForwarded: !!s.fastForwarded,
   });
   await updateSession(site, () => undefined);
@@ -309,7 +332,8 @@ async function endSession(site, s, reason) {
 
 // One time-up conversation is over: save it whole, with how it ended, as a
 // ready-made example for fine-tuning (testers send us these logs).
-async function closeConversation(site, outcome, minutes = 0) {
+// endedAt: when it ended, earlier than now if the user left the site.
+async function closeConversation(site, outcome, minutes = 0, endedAt = Date.now()) {
   const sessions = await getSessions();
   const s = sessions[site];
   if (!s) return;
@@ -323,8 +347,8 @@ async function closeConversation(site, outcome, minutes = 0) {
       intent: s.intent,
       next: s.next,
       agreedMin: s.agreedMin,
-      usedMin: Math.round((Date.now() - s.startedAt) / 60000),
-      outcome, // granted, took offer, done
+      usedMin: Math.round((endedAt - s.startedAt) / 60000),
+      outcome, // granted, took offer, done, left
       fastForwarded: !!s.fastForwarded, // "Time's up now" was used: not a real time-up
       minutes,
       memoryNote: note,
@@ -333,6 +357,321 @@ async function closeConversation(site, outcome, minutes = 0) {
     });
   }
   await updateSession(site, (x) => x && { ...x, conversationFrom: x.turns.length });
+}
+
+// The plan conversation at the start, saved whole when it ends without a
+// session (I'm done, or the user left).
+async function logPlanConversation(site, plan, outcome) {
+  const note = await currentNote();
+  await appendLog({
+    kind: "conversation", phase: "start", site, app: plan.app, intent: plan.intent, next: plan.next,
+    plannedMin: plan.minutes, outcome, minutes: 0, memoryNote: note, system: systemPrompt(note),
+    turns: plan.turns.map(({ id, says, situation, raw, reply, error, model }) => ({ id, says, situation, raw, reply, error, model })),
+  });
+}
+
+// --- Leaving the site ----------------------------------------------------------
+// The background knows which tab shows which watched site ("tabSites" in
+// storage.session, from each tab's check-ins). When the last tab of a site is
+// closed or goes elsewhere, the user left: log it right away, then wait
+// GONE_AFTER_MS (an alarm) before ending the session, so coming back quickly
+// continues it.
+//
+// Tab events and check-ins arrive in any order, and each step reads then
+// writes storage, so they run one at a time. The queue lives in a variable:
+// if Chrome stops this script, nothing is in it anymore. Each time the script
+// starts, the first step is boot() (below).
+let queue = null;
+
+function serial(task) {
+  if (!queue) queue = boot().catch(() => {});
+  const run = queue.then(task);
+  queue = run.catch(() => {});
+  return run;
+}
+
+const GONE_ALARM = "wilo-gone:";
+const goneAlarm = (site) => GONE_ALARM + site;
+
+function hostOf(url) {
+  try {
+    return new URL(url).hostname;
+  } catch {
+    return null; // no URL: Chrome hides it on sites Wilo has no access to
+  }
+}
+
+// { [tabId]: site }, or null for a tab Wilo is closing itself (I'm done).
+async function getTabSites() {
+  const { tabSites } = await chrome.storage.session.get("tabSites");
+  return tabSites || {};
+}
+
+// Is this tab showing this site right now? A check-in can arrive late, from a
+// tab that was just closed or has moved on, or from a page loading in the
+// background (prerender) that the user hasn't seen.
+async function tabOnSite(tabId, site) {
+  try {
+    return hostOf((await chrome.tabs.get(tabId)).url) === site;
+  } catch {
+    return false; // tab gone
+  }
+}
+
+async function trackTab(tabId, site, now) {
+  const tabSites = await getTabSites();
+  const old = tabSites[tabId];
+  if (old === null || old === site) return;
+  tabSites[tabId] = site;
+  await saveOpen({ tabSites });
+  // Went from one watched site to another before we saw the move.
+  if (old) await leaveIfLast(old, "navigated-away", now);
+}
+
+async function untrackTab(tabId, how, now) {
+  const tabSites = await getTabSites();
+  if (!(tabId in tabSites)) return;
+  const site = tabSites[tabId];
+  delete tabSites[tabId];
+  await saveOpen({ tabSites });
+  if (site) await leaveIfLast(site, how, now);
+}
+
+// When each tracked tab last checked in ("tabSeen", { [tabId]: ms }). At the
+// next start this tells a page that survived an update (loaded before then)
+// from a new one with a repeated tab id, and dates a quit on the start screen.
+async function seeTab(tabId, now) {
+  const { tabSeen = {} } = await chrome.storage.session.get("tabSeen");
+  const tabSites = await getTabSites();
+  for (const id of Object.keys(tabSeen)) if (!(id in tabSites)) delete tabSeen[id]; // closed since
+  tabSeen[tabId] = now;
+  await saveOpen({ tabSeen });
+}
+
+async function markClosing(tabId) {
+  const tabSites = await getTabSites();
+  tabSites[tabId] = null;
+  await saveOpen({ tabSites });
+}
+
+async function leaveIfLast(site, how, now) {
+  if (Object.values(await getTabSites()).includes(site)) return; // another tab still has it
+  await logLeave(site, how, now);
+}
+
+// Where the user was when they left.
+function leaveStage(s, plan, now) {
+  if (s) return now >= s.endsAt ? "time-up" : "session";
+  return plan ? "plan-review" : "start-screen";
+}
+
+// The user left the site: log it now, with what was going on, and start the
+// grace period if there's a session or a plan to come back to.
+// extra: more fields for the entry (approx: true when the time is a guess).
+async function logLeave(site, how, now, extra = {}) {
+  const s = (await getSessions())[site];
+  const plan = (await getPlans())[site];
+  const stage = leaveStage(s, plan, now);
+  const entry = { kind: "leave", site, app: (s || plan || {}).app || SITES[site] || site, how, stage, leftAt: now, ...extra };
+  if (s) {
+    Object.assign(entry, {
+      intent: s.intent,
+      agreedMin: s.agreedMin,
+      usedMin: Math.max(0, Math.round((now - s.startedAt) / 60000)),
+      minutesOver: stage === "time-up" ? Math.max(0, Math.round((now - s.endsAt) / 60000)) : undefined,
+      inConversation: s.turns.length > s.conversationFrom, // time-up talk not saved yet
+      free: !!s.free,
+      fastForwarded: !!s.fastForwarded,
+    });
+  } else if (plan) {
+    Object.assign(entry, { intent: plan.intent, plannedMin: plan.minutes, planTurns: plan.turns.length });
+  }
+  await appendLog(entry);
+  if (!s && !plan) return; // start screen: nothing to come back to
+  if (s) await updateSession(site, (x) => x && { ...x, leftAt: now, leftHow: how });
+  if (plan) await setPlan(site, { ...plan, leftAt: now, leftHow: how });
+  await chrome.alarms.create(goneAlarm(site), { when: now + GONE_AFTER_MS });
+}
+
+// Back within the grace period: the session (or plan) just continues.
+async function logReturn(site, leftAt, now) {
+  const s = (await getSessions())[site];
+  const plan = (await getPlans())[site];
+  await appendLog({ kind: "return", site, app: (s || plan || {}).app || SITES[site] || site, awayS: Math.round((now - leftAt) / 1000) });
+  const stay = ({ leftAt: _at, leftHow: _how, ...rest }) => rest;
+  if (s) await updateSession(site, (x) => x && stay(x));
+  if (plan) await setPlan(site, stay(plan));
+  await chrome.alarms.clear(goneAlarm(site));
+}
+
+// The user left and didn't come back in time: save the conversation that was
+// going on (plan review or time-up), then end the plan and the session as of
+// when they left. The one way a left site ends (alarm, next check-in, startup).
+async function endLeft(site) {
+  const plan = (await getPlans())[site];
+  if (plan) {
+    await logPlanConversation(site, plan, "left");
+    await setPlan(site, null);
+  }
+  const s = (await getSessions())[site];
+  if (s) {
+    await closeConversation(site, "left", 0, s.leftAt ?? s.lastSeen);
+    await endSession(site, (await getSessions())[site], "left", s.leftHow || "unknown");
+  }
+  await chrome.alarms.clear(goneAlarm(site));
+}
+
+// A tab of this site checked in: track it, then settle any earlier leave.
+// Returns the session, if one is running.
+async function checkIn(site, tab, now) {
+  const live = !!tab && (await tabOnSite(tab.id, site));
+  if (live) {
+    await trackTab(tab.id, site, now);
+    await seeTab(tab.id, now);
+  }
+  const s = (await getSessions())[site];
+  const plan = (await getPlans())[site];
+  const leftAt = (s && s.leftAt) ?? (plan && plan.leftAt);
+  if (leftAt && now - leftAt > GONE_AFTER_MS) await endLeft(site); // left long enough ago: new session
+  else if (leftAt && live) await logReturn(site, leftAt, now);
+  // No leave seen (e.g. the computer slept), but no check-in for too long.
+  else if (s && !s.leftAt && now - s.lastSeen > GONE_AFTER_MS) await endLeft(site);
+  // Plans too, so a quit during the plan review has a time to log.
+  const p = (await getPlans())[site];
+  if (p) await setPlan(site, { ...p, lastSeen: now });
+  return updateSession(site, (x) => x && { ...x, lastSeen: now });
+}
+
+chrome.tabs.onRemoved.addListener((tabId, { isWindowClosing }) => {
+  const now = Date.now();
+  serial(() => untrackTab(tabId, isWindowClosing ? "closed-window" : "closed-tab", now));
+});
+
+// A tracked tab now shows another site (its URL is hidden from Wilo on sites
+// it has no access to). Reloads and moves within the site don't count.
+chrome.tabs.onUpdated.addListener((tabId, change, tab) => {
+  if (!("url" in change) && !("status" in change)) return;
+  const now = Date.now();
+  serial(async () => {
+    const site = (await getTabSites())[tabId];
+    if (site && hostOf(tab.url) !== site) await untrackTab(tabId, "navigated-away", now);
+  });
+});
+
+// Chrome swapped a tab for another (e.g. a page loaded ahead of time): same tab for the user.
+chrome.tabs.onReplaced.addListener((addedId, removedId) => {
+  serial(async () => {
+    const tabSites = await getTabSites();
+    if (!(removedId in tabSites)) return;
+    tabSites[addedId] = tabSites[removedId];
+    delete tabSites[removedId];
+    await saveOpen({ tabSites });
+  });
+});
+
+// The grace period is over: end the session unless the user came back.
+chrome.alarms.onAlarm.addListener((alarm) => {
+  if (!alarm.name.startsWith(GONE_ALARM)) return;
+  const site = alarm.name.slice(GONE_ALARM.length);
+  serial(async () => {
+    if (Object.values(await getTabSites()).includes(site)) return; // back
+    const s = (await getSessions())[site];
+    const plan = (await getPlans())[site];
+    if ((s && s.leftAt) || (plan && plan.leftAt)) await endLeft(site);
+  });
+});
+
+// --- Chrome quit, or the extension was updated --------------------------------
+// Both empty storage.session (also: extension disabled then enabled); the copy
+// in storage.local ("openState") is still there. The first queued step of each
+// worker lifetime is boot(): if storage.session has no "booted" mark, it was
+// emptied, so boot settles what the copy says was open before anything else
+// runs. This doesn't depend on which event (startup, update, a check-in, a tab
+// event) wakes the worker first.
+
+async function clearGoneAlarms() {
+  const alarms = await chrome.alarms.getAll();
+  await Promise.all(alarms.filter((a) => a.name.startsWith(GONE_ALARM)).map((a) => chrome.alarms.clear(a.name)));
+}
+
+async function boot() {
+  if ((await chrome.storage.session.get("booted")).booted) return;
+  try {
+    const { openState } = await chrome.storage.local.get("openState");
+    if (openState) await settleOpen(openState);
+  } finally {
+    await saveOpen({ booted: true }); // from now on, changes are copied again
+  }
+}
+
+// Is this the very page that checked in before storage.session was emptied
+// (the extension was updated or reloaded, the page stayed)? After a Chrome
+// restart, tab ids start over and may repeat, even on the same site, but the
+// page is a new one: it was loaded after the last check-in (seenAt).
+async function samePage(tabId, site, seenAt) {
+  if (!seenAt || !(await tabOnSite(tabId, site))) return false;
+  try {
+    // Boot runs at the head of the queue: a frozen or hung tab must not hold
+    // up every check-in and tab event behind it.
+    const [{ result }] = await Promise.race([
+      chrome.scripting.executeScript({
+        target: { tabId },
+        func: () => performance.timeOrigin, // when this page started loading
+        injectImmediately: true, // don't wait for a restored tab to finish loading
+      }),
+      new Promise((_, reject) => setTimeout(() => reject(new Error("timeout")), 2000)),
+    ]);
+    return result < seenAt;
+  } catch {
+    return false; // not loaded (e.g. restored tab not opened yet), or gone
+  }
+}
+
+// Per site that was open (session, plan, or only the start screen in a tab):
+// a page still showing it (after an update) means the user never left: it
+// just continues, no leave logged. Otherwise they left while Wilo wasn't
+// running: log the leave at the last time Wilo saw the site (approx), unless
+// it was already logged (e.g. closed-window while quitting), then end it, or
+// wait out the rest of the grace period if it's recent.
+async function settleOpen(openState) {
+  const now = Date.now();
+  const old = { sessions: {}, plans: {}, tabSites: {}, tabSeen: {}, ...openState };
+  // Put the copy back (anything written since this start wins).
+  const sessions = { ...old.sessions, ...(await getSessions()) };
+  const plans = { ...old.plans, ...(await getPlans()) };
+  const tabSites = await getTabSites();
+  const { tabSeen = {} } = await chrome.storage.session.get("tabSeen");
+  const lastSeen = (site) => Math.max((sessions[site] && sessions[site].lastSeen) || 0, (plans[site] && plans[site].lastSeen) || 0);
+  let kept = 0;
+  for (const [id, site] of Object.entries(old.tabSites)) {
+    if (!site || id in tabSites) continue;
+    const seenAt = old.tabSeen[id] ?? lastSeen(site); // the page's own check-in, else the site's
+    if (!(await samePage(Number(id), site, seenAt))) continue;
+    tabSites[id] = site;
+    tabSeen[id] ??= seenAt;
+    kept++;
+  }
+  await saveOpen({ sessions, plans, tabSites, tabSeen });
+  await clearGoneAlarms();
+  // No old page survived: Chrome was restarted. Otherwise the extension was
+  // updated, and a site with no page left was closed during the update.
+  const how = kept ? "unknown" : "browser-closed";
+  const open = new Set(Object.values(tabSites));
+  const tabsOf = (site) => Object.keys(old.tabSites).filter((id) => old.tabSites[id] === site);
+  const sites = new Set([...Object.keys(old.sessions), ...Object.keys(old.plans), ...Object.values(old.tabSites).filter(Boolean)]);
+  for (const site of sites) {
+    if (open.has(site)) continue;
+    const s = sessions[site];
+    const plan = plans[site];
+    let leftAt = (s && s.leftAt) ?? (plan && plan.leftAt);
+    if (!leftAt) {
+      leftAt = Math.max(lastSeen(site), ...tabsOf(site).map((id) => old.tabSeen[id] || 0)) || now;
+      await logLeave(site, how, leftAt, { approx: true }); // stage start-screen if neither
+    }
+    if (!s && !plan) continue; // start screen: nothing to end
+    if (now - leftAt >= GONE_AFTER_MS) await endLeft(site);
+    else await chrome.alarms.create(goneAlarm(site), { when: leftAt + GONE_AFTER_MS });
+  }
 }
 
 // --- Messages from the content scripts, the popup and the offscreen page ----
@@ -353,12 +692,10 @@ const handlers = {
   // A content script loaded on a watched site, or checks in. Without a session
   // the start screen shows, with the onboarding (first time only) or at most
   // one optional check-in question.
-  async status(msg) {
+  async status(msg, sender) {
     await ensureOffscreen();
     const now = Date.now();
-    const before = (await getSessions())[msg.site];
-    if (before && now - before.lastSeen > GONE_AFTER_MS) await endSession(msg.site, before, "left"); // left long enough ago: new session
-    const session = await updateSession(msg.site, (s) => s && { ...s, lastSeen: now });
+    const session = await serial(() => checkIn(msg.site, sender.tab, now));
     if (session) return { session, now };
     const profile = await getProfile();
     const log = await getLog();
@@ -460,13 +797,16 @@ const handlers = {
   // The start screen's plan: Wilo reviews it before the session starts.
   async plan(msg) {
     const minutes = Math.max(1, Math.min(240, Math.round(Number(msg.minutes) || 0)));
-    await setPlan(msg.site, {
+    // Plan writes go through serial, like check-ins (which also update the
+    // plan): otherwise a check-in could write back the plan it read before.
+    await serial(() => setPlan(msg.site, {
       app: SITES[msg.site] || msg.site,
       intent: String(msg.intent || "").slice(0, 200),
       next: String(msg.next || "").slice(0, 200),
       minutes,
       turns: [],
-    });
+      lastSeen: Date.now(),
+    }));
     return reviewPlan(msg.site, null);
   },
 
@@ -478,17 +818,23 @@ const handlers = {
   // The plan is agreed: start the session with the agreed minutes. The plan
   // conversation becomes the start of the session's history.
   async "plan-accept"(msg) {
-    const plan = (await getPlans())[msg.site];
-    if (!plan) return { error: "no plan" };
-    const minutes = Math.max(1, Math.min(plan.minutes, Math.round(Number(msg.minutes) || plan.minutes)));
-    const now = Date.now();
-    const session = await updateSession(msg.site, () => ({
-      ...newSession(plan.app, plan.intent, plan.next, minutes, now),
-      turns: plan.turns,
-      conversationFrom: plan.turns.length,
-      plannedMin: plan.minutes,
-    }));
-    await setPlan(msg.site, null);
+    // In serial, so a check-in can't bring the plan back (see plan).
+    const accepted = await serial(async () => {
+      const plan = (await getPlans())[msg.site];
+      if (!plan) return null;
+      const minutes = Math.max(1, Math.min(plan.minutes, Math.round(Number(msg.minutes) || plan.minutes)));
+      const now = Date.now();
+      const session = await updateSession(msg.site, () => ({
+        ...newSession(plan.app, plan.intent, plan.next, minutes, now),
+        turns: plan.turns,
+        conversationFrom: plan.turns.length,
+        plannedMin: plan.minutes,
+      }));
+      await setPlan(msg.site, null);
+      return { plan, minutes, now, session };
+    });
+    if (!accepted) return { error: "no plan" };
+    const { plan, minutes, now, session } = accepted;
     const d = new Date(now);
     await appendLog({ kind: "start", site: msg.site, app: plan.app, intent: plan.intent, minutes, plannedMin: plan.minutes, next: plan.next, hour: d.getHours(), weekday: d.getDay() });
     const note = await currentNote();
@@ -523,20 +869,20 @@ const handlers = {
 
 
   async done(msg, sender) {
-    // Still discussing the plan: save that conversation and drop the plan.
-    const plan = (await getPlans())[msg.site];
-    if (plan) {
-      const note = await currentNote();
-      await appendLog({
-        kind: "conversation", phase: "start", site: msg.site, app: plan.app, intent: plan.intent, next: plan.next,
-        plannedMin: plan.minutes, outcome: "done", minutes: 0, memoryNote: note, system: systemPrompt(note),
-        turns: plan.turns.map(({ id, says, situation, raw, reply, error, model }) => ({ id, says, situation, raw, reply, error, model })),
-      });
-      await setPlan(msg.site, null);
-    }
-    await closeConversation(msg.site, "done");
-    const s = (await getSessions())[msg.site];
-    if (s) await endSession(msg.site, s, "done");
+    // In serial, so a check-in can't bring the plan or session back (see plan).
+    await serial(async () => {
+      // Wilo closes this tab itself below: that's not the user leaving.
+      if (sender.tab) await markClosing(sender.tab.id);
+      // Still discussing the plan: save that conversation and drop the plan.
+      const plan = (await getPlans())[msg.site];
+      if (plan) {
+        await logPlanConversation(msg.site, plan, "done");
+        await setPlan(msg.site, null);
+      }
+      await closeConversation(msg.site, "done");
+      const s = (await getSessions())[msg.site];
+      if (s) await endSession(msg.site, s, "done");
+    });
     if (sender.tab) await chrome.tabs.remove(sender.tab.id);
     return {};
   },
@@ -560,7 +906,7 @@ const handlers = {
       s.endsAt -= skip;
       s.fastForwarded = true;
     }
-    await chrome.storage.session.set({ sessions });
+    await saveOpen({ sessions });
     return {};
   },
 
@@ -675,12 +1021,17 @@ chrome.tabs.onActivated.addListener(async ({ tabId }) => {
 });
 
 // Load the model as soon as Chrome starts, so the first reply is quick.
-chrome.runtime.onStartup.addListener(() => ensureOffscreen());
+// Both also settle what was open before (boot), without waiting for a tab to check in.
+chrome.runtime.onStartup.addListener(() => {
+  serial(() => {});
+  ensureOffscreen();
+});
 chrome.runtime.onInstalled.addListener((details) => {
   console.log(`[wilo] installed (${details.reason})`);
+  serial(() => {});
   restartModel();
   for (const delay of [1500, 5000, 12000]) setTimeout(ensureWiloInOpenTabs, delay);
 });
 
 // For debugging from the service worker's DevTools console (and dev/check_extension.py).
-globalThis.wilo = { restartModel, handlers, currentNote, getProfile, memoryNote, nextQuestion, capReply };
+globalThis.wilo = { restartModel, handlers, currentNote, getProfile, memoryNote, nextQuestion, capReply, getTabSites, endLeft, boot: () => serial(boot) };

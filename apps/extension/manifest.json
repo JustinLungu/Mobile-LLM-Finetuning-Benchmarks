@@ -1,14 +1,15 @@
 {
   "manifest_version": 3,
   "name": "Wilo",
-  "version": "0.3.2",
+  "version": "0.4.0",
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA3oENdQRxTTf58EqOVLTXBdFMU7zqbi5tKyq7au7NDhNsCefnbfbWXegqD8yTKmzTftz17E9pP49Xd1qVgmP7PFCQi97NOAavAkce1jJVTC0V/t1f9sG51SggDualAZsJtwZTN106DPx84Gd5vjoE+ihLDNjRCqeLCpK0gxkGfOwrO9v+26mY8cblH5YlRN9y2YcczhcpqCnBeKT/CklAdMkT5dvaTGSDWd0rDNm1TzBQFfA/ynTc4M7hJAz0qcCS1AOEiT7b2y9qsp7W5u1vyrFo+rHDD1MFxpLypPsHzMLOqWh39rtQJ5faf6nqpAjA9dfowmLr4gU4pdvtVxhmGQIDAQAB",
   "description": "Companion to help you use social media with purpose. Runs entirely on-device; conversations reach the team only when you click Send.",
   "permissions": [
     "offscreen",
     "storage",
     "unlimitedStorage",
-    "scripting"
+    "scripting",
+    "alarms"
   ],
   "host_permissions": [
     "https://huggingface.co/*",
