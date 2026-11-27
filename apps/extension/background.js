@@ -601,6 +601,16 @@ const handlers = {
   async "study-payload"() {
     return studyPayload();
   },
+
+  // Popup: a free-text comment for the team. Kept in the log (with its time
+  // and version) so it's sent with the conversations; never edited after.
+  async "add-comment"(msg) {
+    const text = String(msg.text || "").trim().slice(0, 5000);
+    if (!text) return { ok: false };
+    await appendLog({ kind: "comment", text });
+    await chrome.storage.local.remove("commentDraft");
+    return { ok: true };
+  },
 };
 
 // The file sent to the team: study ID, version and log, named by study ID.

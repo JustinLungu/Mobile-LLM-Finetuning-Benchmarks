@@ -59,7 +59,8 @@ function showSessions(sessions) {
 async function showLogCount() {
   const { log = [] } = await chrome.storage.local.get("log");
   const n = log.filter((e) => e.kind === "conversation").length;
-  $("log-count").textContent = `${n} conversation${n === 1 ? "" : "s"} so far.`;
+  const c = log.filter((e) => e.kind === "comment").length;
+  $("log-count").textContent = `${n} conversation${n === 1 ? "" : "s"}` + (c ? ` and ${c} comment${c === 1 ? "" : "s"}` : "") + " so far.";
 }
 
 async function init() {
@@ -139,11 +140,38 @@ async function init() {
     window.close();
   });
 
+  // Comments for the team: the draft is kept while typing (so closing the
+  // popup loses nothing), and becomes a log entry on "Add comment", or on
+  // Send / Save a copy so typed text is never left out of the file.
+  const { commentDraft = "" } = await chrome.storage.local.get("commentDraft");
+  $("comment").value = commentDraft;
+  let draftTimer = null;
+  const saveDraft = () => chrome.storage.local.set({ commentDraft: $("comment").value });
+  $("comment").addEventListener("input", () => {
+    clearTimeout(draftTimer);
+    draftTimer = setTimeout(saveDraft, 300);
+  });
+  const addPendingComment = async () => {
+    clearTimeout(draftTimer);
+    const text = $("comment").value.trim();
+    if (!text) return false;
+    const res = await chrome.runtime.sendMessage({ type: "add-comment", text });
+    if (!res || !res.ok) { await saveDraft(); return false; }
+    $("comment").value = "";
+    return true;
+  };
+  $("add-comment").addEventListener("click", async () => {
+    if (!(await addPendingComment())) return;
+    $("add-comment").textContent = "✅ Added, thank you!";
+    setTimeout(() => ($("add-comment").textContent = "Add comment"), 2000);
+  });
+
   // Send to the team's SWITCHdrive folder; if that's not possible, fall back
   // to saving a file the tester emails us.
   // Same file, same name as what "send-log" uploads, so the tester reads
   // exactly what we get and the emailed copy carries the study ID.
   const saveCopy = async () => {
+    await addPendingComment();
     let { name, body } = (await chrome.runtime.sendMessage({ type: "study-payload" })) || {};
     if (!body) {
       // Background didn't answer: save the bare log rather than nothing.
@@ -171,6 +199,7 @@ async function init() {
     }
     $("send").disabled = true;
     $("sent").textContent = "Sending…";
+    await addPendingComment();
     const res = await chrome.runtime.sendMessage({ type: "send-log" });
     $("send").disabled = false;
     if (res && res.sentAt) {
@@ -184,8 +213,11 @@ async function init() {
   $("save-copy").addEventListener("click", saveCopy);
 
   $("clear").addEventListener("click", async () => {
-    if (confirm("Delete all your saved conversations with Wilo from this computer? This can't be undone. (To delete what you already sent, email us with your study ID.)")) {
+    if (confirm("Delete all your saved conversations and comments from this computer? This can't be undone. (To delete what you already sent, email us with your study ID.)")) {
+      clearTimeout(draftTimer);
       await chrome.storage.local.set({ log: [] });
+      await chrome.storage.local.remove("commentDraft");
+      $("comment").value = "";
     }
   });
 }

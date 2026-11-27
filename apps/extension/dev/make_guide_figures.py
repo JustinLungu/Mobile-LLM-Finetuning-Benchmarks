@@ -137,8 +137,10 @@ def main() -> int:
         time.sleep(0.5)
         shoot(chrome, page, "7-free-time-note.png", card_clip(chrome, page, toast, pad=12))
 
-        # 8. The popup's study section, with the send button.
+        # 8. The popup's study section, with a comment added, one being typed, and the send button.
         chrome.evaluate(sw, "chrome.storage.session.set({model: {state: 'ready', key: 'llama3.2-3b', gpu: true, gpuNote: ''}})")
+        chrome.evaluate(sw, "wilo.handlers['add-comment']({text: 'The start screen came up twice on YouTube today.'}).then(() => true)")
+        chrome.evaluate(sw, "chrome.storage.local.set({commentDraft: 'I liked that Wilo asked about my evening plans.'}).then(() => true)")
         chrome.call("Page.reload", {}, popup)
         time.sleep(1.5)
         chrome.evaluate(popup, "document.querySelector('details').open = true; true")
