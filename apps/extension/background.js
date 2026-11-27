@@ -70,10 +70,24 @@ async function updateSession(site, change) {
   return sessions[site];
 }
 
-async function appendLog(entry) {
-  const { log = [] } = await chrome.storage.local.get("log");
-  log.push({ at: new Date().toISOString(), version: chrome.runtime.getManifest().version, ...entry });
-  await chrome.storage.local.set({ log: log.slice(-LOG_LIMIT) });
+// Every write of the log reads it then writes it back, so writes run one at a
+// time, in their own queue: callers both inside and outside serial (below)
+// append, and two at once would drop one entry. Not serial itself, so a queued
+// step can wait for its append without waiting for itself.
+let logQueue = Promise.resolve();
+
+function changeLog(change) {
+  const run = logQueue.then(async () => {
+    const { log = [] } = await chrome.storage.local.get("log");
+    await chrome.storage.local.set({ log: change(log).slice(-LOG_LIMIT) });
+  });
+  logQueue = run.catch(() => {});
+  return run;
+}
+
+function appendLog(entry) {
+  const at = new Date().toISOString();
+  return changeLog((log) => [...log, { at, version: chrome.runtime.getManifest().version, ...entry }]);
 }
 
 // --- The model (lives in the offscreen page) --------------------------------
@@ -974,6 +988,13 @@ const handlers = {
     if (!text) return { ok: false };
     await appendLog({ kind: "comment", text });
     await chrome.storage.local.remove("commentDraft");
+    return { ok: true };
+  },
+
+  // Popup: "Delete my conversations". Here, in the log's queue, so an append
+  // already under way can't put the deleted log back.
+  async "clear-log"() {
+    await changeLog(() => []);
     return { ok: true };
   },
 };
