@@ -37,10 +37,46 @@
   // (e.g. a grant) must not close the overlay before the reply is shown.
   let talking = false;
 
+  // Read the actual player on this tab, including while Wilo has paused it.
+  // Feed pages can contain many unrelated videos: only use their visible player.
+  let videoNavigating = false;
+  document.addEventListener("yt-navigate-start", () => { videoNavigating = true; });
+  document.addEventListener("yt-navigate-finish", () => { videoNavigating = false; reportVideo(); });
+  function readVideo() {
+    if (videoNavigating) return null;
+    const candidates = [...document.querySelectorAll("video")].filter((v) => {
+      const r = v.getBoundingClientRect();
+      return r.width > 0 && r.height > 0 && r.bottom > 0 && r.top < innerHeight;
+    });
+    const video = candidates.find((v) => !v.paused) || candidates[0];
+    if (!video) return { url: location.href, unavailable: true };
+    const youtube = site === "www.youtube.com";
+    const short = location.pathname.startsWith("/shorts/");
+    const scope = short ? document.querySelector("ytd-reel-video-renderer[is-active]") : document;
+    // Do not attribute ad duration/title to the underlying video.
+    if (youtube && document.querySelector(".html5-video-player.ad-showing")) return null;
+    const title = youtube
+      ? scope?.querySelector(short ? "h2" : "ytd-watch-metadata h1, #info-contents h1")?.textContent?.trim()
+      : video.getAttribute("title") || video.getAttribute("aria-label");
+    const channel = youtube ? scope?.querySelector("#channel-name a, ytd-channel-name a")?.textContent?.trim() : null;
+    return {
+      url: location.href, title: title || null, channel: channel || null,
+      durationSeconds: Number.isFinite(video.duration) ? video.duration : null,
+      positionSeconds: video.currentTime, playbackRate: video.playbackRate,
+      paused: video.paused, live: video.duration === Infinity,
+    };
+  }
+  function reportVideo() {
+    if (!disposed && newest() && document.visibilityState === "visible") send("video-context");
+  }
+  document.addEventListener("visibilitychange", reportVideo);
+  document.addEventListener("loadedmetadata", reportVideo, true);
+  document.addEventListener("play", reportVideo, true);
+
   const send = (type, fields = {}) => {
     if (!connected()) return Promise.resolve(null);
     try {
-      return chrome.runtime.sendMessage({ type, site, ...fields }).catch(() => null);
+      return chrome.runtime.sendMessage({ type, site, video: readVideo(), ...fields }).catch(() => null);
     } catch {
       return Promise.resolve(null);
     }
@@ -727,7 +763,7 @@
   });
 
   checkIn = setInterval(() => {
-    if (connected() && newest()) send("status");
+    if (connected() && newest()) send("status", { video: document.visibilityState === "visible" ? readVideo() : undefined });
     else dispose();
   }, CHECK_IN_MS);
   check();

@@ -1,3 +1,4 @@
+import { fitConversation } from "./conversation.js";
 // Runs the model with wllama (llama.cpp compiled to WebAssembly).
 // Offscreen pages can only use chrome.runtime, so the background script tells
 // this page what to load and what to answer.
@@ -140,7 +141,7 @@ async function startEngine(file, system, useGpu) {
   if (wllama) await wllama.exit().catch(() => {});
   wllama = new Wllama({ default: chrome.runtime.getURL("vendor/wllama.wasm") }, { suppressNativeLog: true });
   await wllama.loadModel([file], {
-    n_ctx: 4096, // room for a whole session's conversation
+    n_ctx: 16384, // rules, bounded conversation history, and live playback facts
     reasoning: false, // Qwen and Gemma would otherwise "think" first: slower, and not what we trained
     ...(useGpu ? {} : { n_gpu_layers: 0 }), // 0 = CPU only
   });
@@ -211,6 +212,9 @@ async function generate({ messages, schema }) {
   if (loading) await loading;
   if (!current) throw new Error("model not loaded");
   const t0 = performance.now();
+  // The pinned wllama release has no public tokenizer API. One UTF-8 byte
+  // per token is a conservative bound for these byte-fallback tokenizers.
+  messages = await fitConversation(messages, async (text) => new TextEncoder().encode(text).length, 16384 - maxTokens - 1024);
   const res = await wllama.createChatCompletion({
     messages,
     max_tokens: maxTokens,

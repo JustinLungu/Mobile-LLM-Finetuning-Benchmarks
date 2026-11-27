@@ -1,7 +1,6 @@
 // Wilo's prompt and reply format, shared by the background script.
-// The situation text matches the benchmark prompts and the training data
-// (data/wilo_reactions_v1/build_dataset.py) exactly, so the model sees in the
-// browser what it saw in training.
+// The situation uses the benchmark/training layout, with live playback facts
+// and the current extension limit added for the browser.
 
 import { CONFIG } from "./generated/config.js";
 
@@ -33,15 +32,17 @@ export function systemPrompt(memoryNote) {
   return `${CONFIG.rules}\n\n${CONFIG.memoryHeader}\n${note}`;
 }
 
-export function situationText(session, userSays, now = new Date()) {
+export function situationText(session, userSays, now = new Date(), videoContext = "Current video metadata unavailable. Do not invent a title.") {
   const usedMin = Math.max(0, Math.round((now.getTime() - session.startedAt) / 60000));
   return (
     `Current time: ${dayTime(now)}.\n` +
     `App: ${session.app}.\n` +
     `Declared intent: ${clause(session.intent)}.\n` +
     `Agreed time: ${session.agreedMin} minutes. Time used: ${usedMin} minutes.\n` +
-    `Extensions so far: ${session.extensions}.\n` +
+    `Extensions so far: ${session.extensions}. Extra time actually granted: ${session.grantedExtraMin || 0} minutes.\n` +
     `Next event: ${clause(session.next) || "nothing planned"}.\n` +
+    `Maximum extension available this turn: ${maxExtension(session)} minutes.\n` +
+    `${videoContext}\n` +
     `\n` +
     `The user says: ${String(userSays).trim()}`
   );

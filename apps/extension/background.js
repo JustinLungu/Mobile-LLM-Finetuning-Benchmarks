@@ -6,6 +6,8 @@
 //   storage.session  sessions (per site), model status. Cleared when Chrome closes.
 //   storage.local    settings (model, memory note) and the log. Kept.
 
+import { cleanVideo, observeVideo, videoText } from "./video-context.js";
+import { conversationHistory } from "./conversation.js";
 import { CONFIG } from "./generated/config.js";
 import { PLAN_SCHEMA, REPLY_SCHEMA, SITES, capPlan, capReply, modelByKey, planText, situationText, systemPrompt } from "./wilo.js";
 import { ONBOARDING, cleanRule, freeWindowNow, memoryNote, nextQuestion, recentSessions, recordAnswer } from "./memory.js";
@@ -46,7 +48,14 @@ async function getSessions() {
   return sessions || {};
 }
 
-async function updateSession(site, change) {
+let sessionWrites = Promise.resolve();
+function updateSession(site, change) {
+  const result = sessionWrites.then(() => writeSession(site, change));
+  sessionWrites = result.catch(() => {});
+  return result;
+}
+
+async function writeSession(site, change) {
   const sessions = await getSessions();
   sessions[site] = change(sessions[site]);
   if (!sessions[site]) delete sessions[site];
@@ -122,26 +131,13 @@ function parseReply(raw) {
   return reply;
 }
 
-// Wilo sees the whole conversation of the session, up to this many exchanges
-// back (about 120 tokens each, well within the model's 4096-token window).
-const HISTORY_TURNS = 12;
-
-async function askWilo(site, userSays) {
+async function askWilo(site, userSays, video) {
   const sessions = await getSessions();
   const session = sessions[site];
   if (!session) return { error: "no session" };
   const system = systemPrompt(await currentNote());
-  const user = situationText(session, userSays);
-  // Earlier exchanges, in the same format: each user turn is the situation at
-  // that moment plus what they said, each Wilo turn is its JSON reply.
-  // Fallback replies (no model) are left out: Wilo never said them.
-  const history = session.turns
-    .filter((t) => t.raw)
-    .slice(-HISTORY_TURNS)
-    .flatMap((t) => [
-      { role: "user", content: t.situation },
-      { role: "assistant", content: t.raw },
-    ]);
+  const user = situationText(session, userSays, new Date(), videoText(session, cleanVideo(video, site)));
+  const history = conversationHistory(session.turns);
   const messages = [{ role: "system", content: system }, ...history, { role: "user", content: user }];
 
   const { model } = await chrome.storage.session.get("model");
@@ -193,6 +189,9 @@ async function extend(site, minutes) {
   return updateSession(site, (s) => s && {
     ...s,
     endsAt: Date.now() + minutes * 60000,
+    grantedExtraMin: (s.grantedExtraMin || 0) + minutes,
+    lastExtensionMin: minutes,
+    turns: s.turns.map((turn, i) => i === s.turns.length - 1 ? { ...turn, acceptedMinutes: minutes } : turn),
     extensions: s.extensions + 1,
     declines: 0,
   });
@@ -216,15 +215,12 @@ async function setPlan(site, plan) {
   await chrome.storage.session.set({ plans });
 }
 
-async function reviewPlan(site, userSays) {
+async function reviewPlan(site, userSays, video) {
   const plan = (await getPlans())[site];
   if (!plan) return { error: "no plan" };
   const note = await currentNote();
-  const user = planText(plan, userSays);
-  const history = plan.turns.filter((t) => t.raw).flatMap((t) => [
-    { role: "user", content: t.situation },
-    { role: "assistant", content: t.raw },
-  ]);
+  const user = planText(plan, userSays) + "\n\n" + videoText({}, cleanVideo(video, site));
+  const history = conversationHistory(plan.turns);
   const messages = [{ role: "system", content: systemPrompt(note) }, ...history, { role: "user", content: user }];
 
   const { model } = await chrome.storage.session.get("model");
@@ -274,6 +270,8 @@ function newSession(app, intent, next, minutes, now, extra = {}) {
     extensions: 0,
     declines: 0,
     lastSeen: now,
+    videos: [],
+    tabVideos: {},
     turns: [], // every exchange with Wilo in this session
     conversationFrom: 0, // where the current time-up conversation starts in turns
     ...extra,
@@ -303,6 +301,7 @@ async function endSession(site, s, reason) {
     weekday: started.getDay(),
     reason,
     fastForwarded: !!s.fastForwarded,
+    videos: s.videos || [],
   });
   await updateSession(site, () => undefined);
 }
@@ -338,6 +337,7 @@ async function closeConversation(site, outcome, minutes = 0) {
 // --- Messages from the content scripts, the popup and the offscreen page ----
 
 const handlers = {
+  async "video-context"() { return {}; },
   // Offscreen page started: tell it which model to load.
   async hello() {
     sendLoad().catch(() => {});
@@ -467,12 +467,12 @@ const handlers = {
       minutes,
       turns: [],
     });
-    return reviewPlan(msg.site, null);
+    return reviewPlan(msg.site, null, msg.video);
   },
 
   // The user answers Wilo's question or explains more about the plan.
   async "plan-reply"(msg) {
-    return reviewPlan(msg.site, String(msg.text || "").slice(0, 500));
+    return reviewPlan(msg.site, String(msg.text || "").slice(0, 500), msg.video);
   },
 
   // The plan is agreed: start the session with the agreed minutes. The plan
@@ -510,7 +510,7 @@ const handlers = {
   },
 
   async ask(msg) {
-    return askWilo(msg.site, String(msg.text || "").slice(0, 500));
+    return askWilo(msg.site, String(msg.text || "").slice(0, 500), msg.video);
   },
 
   // The user took Wilo's counter-offer.
@@ -580,7 +580,17 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.target === "offscreen") return false; // meant for the model page
   const handler = handlers[msg.type];
   if (!handler) return false;
-  handler(msg, sender).then(sendResponse, (e) => sendResponse({ error: String((e && e.message) || e) }));
+  (async () => {
+    const fromPage = sender.tab && sender.url && new URL(sender.url).hostname === msg.site && SITES[msg.site];
+    const observed = fromPage && Object.hasOwn(msg, "video") && msg.video !== undefined;
+    if (observed) await updateSession(msg.site, (s) => s && observeVideo(s, msg.video, msg.site, sender.tab.id));
+    const result = await handler(msg, sender);
+    // Starting a session also counts the video already open in this tab.
+    if (observed && result?.session) {
+      result.session = await updateSession(msg.site, (s) => s && observeVideo(s, msg.video, msg.site, sender.tab.id));
+    }
+    return result;
+  })().then(sendResponse, (e) => sendResponse({ error: String((e && e.message) || e) }));
   return true;
 });
 

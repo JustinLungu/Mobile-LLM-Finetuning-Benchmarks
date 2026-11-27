@@ -24,7 +24,7 @@ You get a file called `wilo-extension-0.3.0.zip`. Use **Google Chrome** (Edge an
 - Rate Wilo's replies with 👍 or 👎. That tells us which answers to teach it.
 - Expect Wilo to take 5–25 seconds to answer, depending on your computer. It's thinking on your computer, not in the cloud.
 
-**Sending us your results:** your conversations are saved on your computer as you go; nothing is sent anywhere. At the end of the study, click the Wilo icon → **For the study** → **Save my conversations for the Wilo team**, and send us the file from your Downloads folder. It contains what you told Wilo and what it answered, your ratings, your answers to its questions and free-time settings, and when you used which site and for how long. Nothing else: Wilo never sees what you look at on these sites. Before sending, you can open the file and read it, or delete it via **Delete my conversations**.
+**Sending us your results:** your conversations are saved on your computer as you go; nothing is sent anywhere. At the end of the study, click the Wilo icon → **For the study** → **Save my conversations for the Wilo team**, and send us the file from your Downloads folder. It contains what you told Wilo and what it answered, your ratings, your answers to its questions and free-time settings, and when you used which site and for how long. It also includes observed video metadata (title, channel when available, URL, duration, playback position, and when videos were opened). This is read locally from visible players; video footage, audio, comments, and page descriptions are not collected. Before sending, you can open the file and read it, or delete it via **Delete my conversations**.
 
 **If something goes wrong:** open `chrome://extensions`, click the reload icon on the Wilo card, and tell us what happened (a screenshot helps).
 
@@ -33,13 +33,14 @@ You get a file called `wilo-extension-0.3.0.zip`. Use **Google Chrome** (Edge an
 ```bash
 uv run apps/extension/setup.py          # downloads wllama, writes generated/config.js
 uv run apps/extension/setup.py --zip    # also makes dist/wilo-extension-<version>.zip for testers
+node --experimental-vm-modules apps/extension/dev/check_context.mjs  # metadata and conversation regressions; no model needed
 uv run apps/extension/dev/check_extension.py   # end-to-end check in headless Chrome
 uv run apps/extension/dev/check_open_tabs.py   # Wilo in tabs open before an install or update
 uv run apps/extension/dev/check_memory.py      # what Wilo learns, and its check-in questions
 uv run apps/extension/dev/check_between_sessions.py  # welcome back after a session, free-time rules
 ```
 
-`setup.py` takes Wilo's rules from `spec/bench_prompts.json` and the model links from `models/registry.yaml`, so the extension uses the same prompt and model files as the benchmarks and the training data. To load your working copy, use **Load unpacked** on `apps/extension/` itself. After editing files, click the reload icon on `chrome://extensions`.
+`setup.py` takes Wilo's rules from `spec/wilo_prompt.json` and the model links from `models/registry.yaml`, so the extension uses the same prompt and model files as the benchmarks and the training data. To load your working copy, use **Load unpacked** on `apps/extension/` itself. After editing files, click the reload icon on `chrome://extensions`.
 
 The check needs the GGUF files from `models/download.py`. It serves them locally, opens Instagram, goes through the start screen, jumps to time-up, asks Wilo for more time, and prints the reply and the log entry. Options: `--model llama3.2-3b`, `--say "come on"` (repeat `--say` for a conversation), `--intent`, `--next`, `--dark`, `--flaky-mb 200` (the test server drops the download every 200 MB, to check resuming) and `--from-hf` (download from Hugging Face like testers).
 
@@ -57,7 +58,9 @@ To try another model or model file (e.g. our fine-tuned one): Wilo icon → **Ad
 | `popup.*` | Model status, settings, the log |
 
 - **Wilo reviews every plan before the session starts:** after Start, it accepts the plan (✅), offers less time (🤝) or asks something (❓, e.g. for "idk"). The user can answer, take the offer, or click "I'm done". It never gives more than asked. This conversation becomes the start of the session's history.
-- **Wilo sees the whole conversation of the session** (up to 12 earlier exchanges). Each user turn is the situation at that moment (time, app, intent, agreed and used minutes, extensions, next event) plus what the user said, in exactly the training format. Wilo's instructions are in `spec/wilo_prompt.json`, and its JSON reply is forced to the schema, so it can't be malformed.
+- **Wilo receives compact conversation history**: the four latest exchanges plus an older conversation record bounded to 5,000 characters. It replays the replies actually shown (including capped minutes and fallbacks), rather than the model's unapplied JSON. Older details can still be omitted in very long conversations; the prompt labels this explicitly. The model uses an 16,384-token context window, with a conservative UTF-8 byte budget that removes older exchanges in pairs if needed. Each new user turn includes the current situation and the extension limit. Wilo's instructions are in `spec/wilo_prompt.json`, and its JSON reply is forced to the schema, so it can't be malformed.
+- **Video context:** each chat request reads playback facts from its own tab. YouTube watch pages and Shorts provide title and channel when their DOM exposes them; other sites provide visible-player timing and title attributes when available. Unknown fields stay unknown. Sessions count observed video openings across tabs (revisits count again, same-tab reloads do not) and keep their metadata. The prompt includes the current video and the six latest openings, with the total count. Ads and temporarily missing players do not reset video identity. The model can read this metadata; it cannot see the video contents.
+- **Time limits:** the existing extension cap still applies (first extension: agreed time, bounded to 5–30 minutes; later extensions halve the limit, with a 2-minute minimum). Wilo now sees that cap before replying and is instructed to explain when an offer is too short to finish a video.
 - **Each reply shows its decision** (✅ +10 min / 🤝 Offer: 5 min / ✋ No extra time) and 👍/👎 buttons.
 - **When a time-up conversation ends,** it's saved whole in the log with its outcome (granted, took offer, done) and the minutes given. These are ready-made fine-tuning examples.
 - **Grant:** the session is extended.
