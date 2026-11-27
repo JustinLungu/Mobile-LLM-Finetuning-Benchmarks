@@ -394,6 +394,7 @@
     const thinking = bubble("Wilo is reading your plan…", "wilo thinking");
     const res = text === null && plan ? await send("plan", { intent: plan.intent, minutes: plan.minutes, next: plan.next }) : await send("plan-reply", { text });
     thinking.remove();
+    if (res && res.stale) return catchUp();
     if (!res || !res.reply) {
       bubble("Sorry, I couldn't think just now. Try again?", "wilo");
       planReplyBox();
@@ -652,6 +653,7 @@
     const thinking = bubble("Wilo is thinking…", "wilo thinking");
     const res = await send("ask", { text });
     thinking.remove();
+    if (res && res.stale) return catchUp();
     if (!res || !res.reply) {
       bubble("Sorry, I couldn't think just now. Try again?", "wilo");
       askBox();
@@ -667,6 +669,21 @@
     } else {
       declinedActions();
     }
+  }
+
+  // Wilo's reply came too late: the plan or session it was for ended (or its
+  // conversation was closed in another tab) while Wilo was thinking, so
+  // background.js dropped it. Show the site as it is now instead.
+  async function catchUp() {
+    talking = false;
+    const res = await send("status");
+    if (!res) return;
+    session = res.session;
+    if (session) {
+      hide();
+      schedule();
+    } else if (res.plan) showPlanChat(res.plan, true);
+    else showStart({ onboarding: res.onboarding, question: res.question, welcomeBack: res.welcomeBack });
   }
 
   function resume(res) {

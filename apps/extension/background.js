@@ -85,6 +85,11 @@ function changeLog(change) {
   return run;
 }
 
+// How many times "Delete my conversations" ran since the worker started. A
+// model reply asked for before a delete is neither added nor logged. Kept in
+// memory only: a worker restart also drops any reply on its way.
+let logClears = 0;
+
 function appendLog(entry) {
   const at = new Date().toISOString();
   return changeLog((log) => [...log, { at, version: chrome.runtime.getManifest().version, ...entry }]);
@@ -157,6 +162,7 @@ function parseReply(raw) {
 const HISTORY_TURNS = 12;
 
 async function askWilo(site, userSays) {
+  const clears = logClears;
   const sessions = await getSessions();
   const session = sessions[site];
   if (!session) return { error: "no session" };
@@ -207,15 +213,30 @@ async function askWilo(site, userSays) {
     ms: result && result.ms,
   };
   // Added to the session as it is now (re-read in serial): a check-in may
-  // have changed it while Wilo was thinking. If it ended meanwhile, it stays ended.
-  await serial(() => updateSession(site, (s) => s && {
-    ...s,
-    turns: [...s.turns, turn],
-    declines: s.declines + (reply.decision === "decline" ? 1 : 0),
-  }));
-  await appendLog({ kind: "negotiation", site, app: session.app, ...turn, historyTurns: history.length / 2, timings: result && result.timings });
-  if (reply.decision === "grant") await serial(() => grant(site, reply.minutes, "granted"));
-  return { reply, id: turn.id, fallback: !!error };
+  // have changed it while Wilo was thinking. Only if it's still the same
+  // session and conversation: if it ended (and maybe a new one started), or
+  // it got more time meanwhile, which closes the conversation (e.g. an offer
+  // taken in another tab), the reply came too late and is dropped, grant
+  // included. Logged all the same, marked discarded, unless the user deleted
+  // their conversations meanwhile: then it's dropped and not logged.
+  const entry = { kind: "negotiation", site, app: session.app, ...turn, historyTurns: history.length / 2, timings: result && result.timings };
+  const applied = await serial(async () => {
+    const s = (await getSessions())[site];
+    if (!s || s.id !== session.id || s.extensions !== session.extensions || clears !== logClears) return false;
+    await updateSession(site, (x) => ({
+      ...x,
+      turns: [...x.turns, turn],
+      declines: x.declines + (reply.decision === "decline" ? 1 : 0),
+    }));
+    await appendLog(entry); // before the grant's conversation entry
+    if (reply.decision === "grant") await grant(site, reply.minutes, "granted");
+    return true;
+  });
+  if (applied) return { reply, id: turn.id, fallback: !!error };
+  // Checked right before appending: a delete clicked later empties the log after this entry.
+  if (clears === logClears) await appendLog({ ...entry, discarded: true });
+  // The tab that asked shows the site as it is now instead (see content.js).
+  return { error: "session changed", stale: true };
 }
 
 // More time agreed: extend the session and save the time-up conversation.
@@ -254,6 +275,7 @@ async function setPlan(site, plan) {
 }
 
 async function reviewPlan(site, userSays) {
+  const clears = logClears;
   const plan = (await getPlans())[site];
   if (!plan) return { error: "no plan" };
   const note = await currentNote();
@@ -296,17 +318,24 @@ async function reviewPlan(site, userSays) {
     ms: result && result.ms,
   };
   // Add the turn to the plan as it is now: the user may have left (or come
-  // back) while Wilo was thinking. If the plan ended meanwhile, it stays ended.
-  await serial(async () => {
+  // back) while Wilo was thinking. Only if it's still the same plan: if it
+  // ended (and maybe a new one was written), the reply came too late and is
+  // dropped. Logged all the same, marked discarded, unless the user deleted
+  // their conversations meanwhile (as in askWilo).
+  const applied = await serial(async () => {
     const current = (await getPlans())[site];
-    if (current) await setPlan(site, { ...current, turns: [...current.turns, turn] });
+    if (!current || current.id !== plan.id || clears !== logClears) return false;
+    await setPlan(site, { ...current, turns: [...current.turns, turn] });
+    return true;
   });
-  await appendLog({ kind: "plan-review", site, app: plan.app, ...turn, timings: result && result.timings });
+  if (clears === logClears) await appendLog({ kind: "plan-review", site, app: plan.app, ...turn, timings: result && result.timings, discarded: applied ? undefined : true });
+  if (!applied) return { error: "plan changed", stale: true };
   return { reply, id: turn.id, fallback: !!error };
 }
 
 function newSession(app, intent, next, minutes, now, extra = {}) {
   return {
+    id: crypto.randomUUID(), // tells a late model reply it's for an earlier session
     app,
     intent,
     next,
@@ -859,6 +888,7 @@ const handlers = {
     // Plan writes go through serial, like check-ins (which also update the
     // plan): otherwise a check-in could write back the plan it read before.
     await serial(() => setPlan(msg.site, {
+      id: crypto.randomUUID(), // tells a late model reply it's for an earlier plan
       app: SITES[msg.site] || msg.site,
       intent: String(msg.intent || "").slice(0, 200),
       next: String(msg.next || "").slice(0, 200),
@@ -1041,6 +1071,7 @@ const handlers = {
   // copy is logged before the log is emptied.
   async "clear-log"() {
     await serial(async () => {
+      logClears++; // a model reply on its way now is dropped (see askWilo)
       const sessions = await getSessions();
       for (const s of Object.values(sessions)) Object.assign(s, { turns: [], conversationFrom: 0 });
       const plans = await getPlans();
