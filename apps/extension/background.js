@@ -636,9 +636,18 @@ async function boot() {
 // Is this the very page that checked in before storage.session was emptied
 // (the extension was updated or reloaded, the page stayed)? After a Chrome
 // restart, tab ids start over and may repeat, even on the same site, but the
-// page is a new one: it was loaded after the last check-in (seenAt).
+// page is a new one: it was loaded after the last check-in (seenAt). Returns
+// null when the tab is still on the site but can't be asked: discarded to
+// save memory, or no answer in time.
 async function samePage(tabId, site, seenAt) {
-  if (!seenAt || !(await tabOnSite(tabId, site))) return false;
+  let tab;
+  try {
+    tab = await chrome.tabs.get(tabId);
+  } catch {
+    return false; // tab gone
+  }
+  if (!seenAt || hostOf(tab.url) !== site) return false;
+  if (tab.discarded) return null;
   try {
     // Boot runs at the head of the queue: a frozen or hung tab must not hold
     // up every check-in and tab event behind it.
@@ -652,13 +661,15 @@ async function samePage(tabId, site, seenAt) {
     ]);
     return result < seenAt;
   } catch {
-    return false; // not loaded (e.g. restored tab not opened yet), or gone
+    return null; // frozen, slow, or not loaded yet
   }
 }
 
 // Per site that was open (session, plan, or only the start screen in a tab):
 // a page still showing it (after an update) means the user never left: it
-// just continues, no leave logged. Otherwise they left while Wilo wasn't
+// just continues, no leave logged. So does a tab still on the site that can't
+// be asked (discarded or not answering): its next check-in carries on, and if
+// it's closed instead, that's logged as usual. Otherwise they left while Wilo wasn't
 // running: log the leave at the last time Wilo saw the site (approx), unless
 // it was already logged (e.g. closed-window while quitting), then end it, or
 // wait out the rest of the grace period if it's recent.
@@ -675,15 +686,15 @@ async function settleOpen(openState) {
   for (const [id, site] of Object.entries(old.tabSites)) {
     if (!site || id in tabSites) continue;
     const seenAt = old.tabSeen[id] ?? lastSeen(site); // the page's own check-in, else the site's
-    if (!(await samePage(Number(id), site, seenAt))) continue;
+    if ((await samePage(Number(id), site, seenAt)) === false) continue;
     tabSites[id] = site;
     tabSeen[id] ??= seenAt;
     kept++;
   }
   await saveOpen({ sessions, plans, tabSites, tabSeen });
   await clearGoneAlarms();
-  // No old page survived: Chrome was restarted. Otherwise the extension was
-  // updated, and a site with no page left was closed during the update.
+  // No old tab is still on its site: Chrome was restarted. Otherwise the
+  // extension was updated, and a site with no page left was closed during it.
   const how = kept ? "unknown" : "browser-closed";
   const open = new Set(Object.values(tabSites));
   const tabsOf = (site) => Object.keys(old.tabSites).filter((id) => old.tabSites[id] === site);

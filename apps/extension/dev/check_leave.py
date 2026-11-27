@@ -28,6 +28,8 @@ minimum), so the real alarm path ends the session. Cases:
     its last check-in (reloaded while the copy was frozen), as after a restart
     that reuses tab ids: not the same page, so a leave, then a return.
     d) Extension reload with the tab still open: session restored, no leave.
+    e) The same with the tab discarded (Memory Saver), so it can't be asked:
+    still tracked, no leave.
 No model is needed (Wilo's fallback replies are used, even if one is loaded).
 """
 
@@ -425,7 +427,23 @@ def main() -> int:
              f"session restored ({st['session'] and st['session']['intent']}), tab tracked: {c.tracked(IG)}")
         c.ok(11, not leaves(c.entries(n)) and not ends(c.entries(n)), "no leave, no session-end")
 
-        errors = [l for l in chrome.console if "EXCEPTION" in l]
+        # 11e. Extension update while the tab is discarded: it can't run a script.
+        print("11e. Extension update with the tab discarded")
+        n = c.log_len()
+        chrome.call("Target.createTarget", {"url": "about:blank"})  # the Instagram tab goes to the background
+        time.sleep(1)
+        gone = c.js(f"chrome.tabs.query({{url: 'https://{IG}/*'}}).then(([t]) => chrome.tabs.discard(t.id)).then(t => t.id)")
+        wait_for(lambda: c.js(f"chrome.storage.local.get('openState').then(({{openState: o}}) => o.tabSites[{gone}] === {IG!r})"),
+                 10, every=0.3, what="discarded tab in the copy")
+        c.js("chrome.storage.session.clear().then(() => wilo.boot()).then(() => true)")
+        time.sleep(3)
+        st = c.state(IG)
+        discarded = c.js(f"chrome.tabs.get({gone}).then(t => t.discarded)")
+        c.ok(11, discarded and st["session"] and "leftAt" not in st["session"] and c.tracked(IG) == 1 and not st["alarm"],
+             f"discarded={discarded}: session kept, tab tracked: {c.tracked(IG)}, no grace alarm")
+        c.ok(11, not leaves(c.entries(n)) and not ends(c.entries(n)), "no leave, no session-end")
+
+        errors =[l for l in chrome.console if "EXCEPTION" in l]
         errors += chrome.evaluate(settings, f"chrome.developerPrivate.getExtensionInfo({ext!r}).then(i => i.runtimeErrors.map(e => e.message + ' @ ' + e.contextUrl))")
         print("errors:", errors or "none")
         c.ok(0, not errors, "no errors")
