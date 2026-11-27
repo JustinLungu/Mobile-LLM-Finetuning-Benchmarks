@@ -141,12 +141,20 @@ async function init() {
 
   // Send to the team's SWITCHdrive folder; if that's not possible, fall back
   // to saving a file the tester emails us.
+  // Same file, same name as what "send-log" uploads, so the tester reads
+  // exactly what we get and the emailed copy carries the study ID.
   const saveCopy = async () => {
-    const { log = [] } = await chrome.storage.local.get("log");
-    const blob = new Blob([JSON.stringify(log, null, 2)], { type: "application/json" });
+    let { name, body } = (await chrome.runtime.sendMessage({ type: "study-payload" })) || {};
+    if (!body) {
+      // Background didn't answer: save the bare log rather than nothing.
+      const { log = [] } = await chrome.storage.local.get("log");
+      name = `wilo-conversations-${new Date().toISOString().slice(0, 10)}.json`;
+      body = JSON.stringify(log, null, 2);
+    }
+    const blob = new Blob([body], { type: "application/json" });
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
-    a.download = `wilo-conversations-${new Date().toISOString().slice(0, 10)}.json`;
+    a.download = name;
     a.click();
   };
   const showSent = async () => {
@@ -155,16 +163,16 @@ async function init() {
     $("sent").textContent = (lastSent ? `Last sent: ${new Date(lastSent).toLocaleString()}. ` : "") + (id ? `Your study ID: ${id}` : "");
   };
   showSent();
-  $("download").addEventListener("click", async () => {
+  $("send").addEventListener("click", async () => {
     if (!CONFIG.upload) {
       await saveCopy();
       $("sent").textContent = "Saved to your Downloads folder. Please email it to us.";
       return;
     }
-    $("download").disabled = true;
+    $("send").disabled = true;
     $("sent").textContent = "Sending…";
     const res = await chrome.runtime.sendMessage({ type: "send-log" });
-    $("download").disabled = false;
+    $("send").disabled = false;
     if (res && res.sentAt) {
       await showSent();
       $("sent").textContent = "✅ Sent, thank you! " + $("sent").textContent;

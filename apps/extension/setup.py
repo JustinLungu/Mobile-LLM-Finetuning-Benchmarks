@@ -25,6 +25,7 @@ import base64
 import hashlib
 import io
 import json
+import re
 import tarfile
 import urllib.request
 import zipfile
@@ -70,8 +71,6 @@ def upload_target() -> dict | None:
     The file holds one line, the share link, e.g. https://drive.switch.ch/index.php/s/AbC123.
     Testers' extensions upload to it with Nextcloud's public WebDAV.
     """
-    import re
-
     if not UPLOAD_LINK.exists():
         return None
     link = UPLOAD_LINK.read_text().strip()
@@ -113,7 +112,8 @@ def write_config() -> None:
         f"export const CONFIG = {json.dumps(config, indent=2, ensure_ascii=False)};\n"
     )
     upload = config["upload"]
-    print(f"generated/config.js written ({len(models)} models, " + (f"uploads to {upload['base']}" if upload else f"no {UPLOAD_LINK.name}: conversations are saved as a file") + ")")
+    where = f"uploads to {upload['base']}" if upload else f"no {UPLOAD_LINK.name}: conversations are saved as a file"
+    print(f"generated/config.js written ({len(models)} models, {where})")
 
 
 # Developer-only files that testers don't need.
@@ -123,8 +123,6 @@ GUIDE = HERE / "guide" / "tester-guide.html"
 
 def guide_single_file() -> str:
     """The tester guide with its pictures built in, so it's one file to send."""
-    import re
-
     html = GUIDE.read_text()
 
     def inline(match):

@@ -579,13 +579,12 @@ const handlers = {
   // Done here, not in the popup, so it finishes even if the popup closes.
   async "send-log"() {
     if (!CONFIG.upload) return { error: "not set up" };
-    const id = await studyId();
-    const name = `wilo-${id}-${new Date().toISOString().replace(/[:.]/g, "-")}.json`;
-    const body = JSON.stringify({ studyId: id, version: chrome.runtime.getManifest().version, log: await getLog() }, null, 2);
+    const { name, body } = await studyPayload();
     const res = await fetch(`${CONFIG.upload.base}/public.php/dav/files/${CONFIG.upload.token}/${name}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json", "X-Requested-With": "XMLHttpRequest" },
       body,
+      signal: AbortSignal.timeout(30000),
     });
     if (!res.ok) throw new Error(`upload failed (HTTP ${res.status})`);
     const sentAt = new Date().toISOString();
@@ -596,7 +595,21 @@ const handlers = {
   async "study-id"() {
     return { id: await studyId() };
   },
+
+  // Popup: the exact file "send-log" uploads, for "Save a copy" and the
+  // email fallback.
+  async "study-payload"() {
+    return studyPayload();
+  },
 };
+
+// The file sent to the team: study ID, version and log, named by study ID.
+async function studyPayload() {
+  const id = await studyId();
+  const name = `wilo-${id}-${new Date().toISOString().replace(/[:.]/g, "-")}.json`;
+  const body = JSON.stringify({ studyId: id, version: chrome.runtime.getManifest().version, log: await getLog() }, null, 2);
+  return { name, body };
+}
 
 // A random ID per install, so the team can tell testers' files apart (and
 // delete someone's data on request) without knowing who they are.
